@@ -4,6 +4,7 @@ import numpy as np
 
 from montecarlo import LatticeMetropolis
 from lattice2d import LatticeGaugeTheory2D
+from su2matrices import SU2Matrix
 
 
 class LatticeMetropolisTest(unittest.TestCase):
@@ -36,3 +37,11 @@ class LatticeMetropolisTest(unittest.TestCase):
         # Try Delta_S = 1/2 * ln(1/r), should give acceptance
         np.random.seed(42)
         self.assertTrue(self.metropolis.metropolis_test(1/2 * np.log(1/r)))
+
+    def test_matrix_shift_gives_SU2_matrix(self):
+        # generate 100 SU(2) matrices and an update for each
+        matrices = np.vectorize(SU2Matrix)(np.empty(100))
+        shifted_matrices = np.vectorize(self.metropolis.matrix_shift)(matrices)
+
+        for matrix in shifted_matrices:
+            self.assertTrue(matrix.is_special_unitary())

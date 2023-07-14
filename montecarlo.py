@@ -5,8 +5,10 @@
 # if vertical link is chosen, co-boundary will be plaquettes starting at (x, y) and (x - 1, y)
 
 import numpy as np
+from scipy.linalg import expm
 
 from lattice2d import LatticeGaugeTheory2D
+from su2matrices import SU2Matrix
 
 
 class LatticeMetropolis:
@@ -26,25 +28,31 @@ class LatticeMetropolis:
 
     def matrix_shift(self, matrix):
         """
-        Generates an update to the matrix provided, by generating an NxN matrix with each entry being a random number
-        sampled in the range [-step_size, +step_size].
+        Generates an update to the SU2Matrix provided, by generating a random SU2Matrix with two random, complex entries
+        that have a real and imaginary part smaller than the step size.
 
-        :param matrix: the NxN matrix to update.
+        :param matrix: the SU2Matrix to update.
         """
-        N = len(matrix)
-        assert len(matrix[0]) == N
-        random_numbers_real_part = np.random.random_sample((N, N)) * self.step_size
-        random_numbers_complex_part = np.random.random_sample((N, N)) * self.step_size
+        # generate a random special unitary matrix
+        # these are generated with a standard deviation of the step size, with the mean being the identity matrix
+        a_r = np.random.normal(1, self.step_size, 1)
+        a_i, b_r, b_i = np.random.normal(0, self.step_size, 3)
 
-        for i in range(0, N):
-            for j in range(0, N):
-                rand = np.random.randint(1, 2, 2)
-                random_numbers_real_part[i, j] *= (-1) ** rand[0]
-                random_numbers_complex_part[i, j] *= (-1) ** rand[1]
+        a = a_r + 1j*a_i
+        b = b_r + 1j*b_i
+        c = -b_r + 1j*b_i
+        d = a_r - 1j*b_i
 
-        random_numbers = random_numbers_real_part + 1j * random_numbers_complex_part
+        V = SU2Matrix(a=a, b=b)
 
-        return matrix + random_numbers
+        # this matrix and its hermitian conjugate should be equally probable to ensure detail balance, so randomly
+        # choose one
+        rand = np.random.rand()
+        if rand > 0.5:
+            V = V.hermitian_conjugate()
+
+        # create the shifted matrix
+        return matrix.right_multiply_by(V)
 
     def metropolis_test(self, delta_S):
         """
