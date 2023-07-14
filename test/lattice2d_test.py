@@ -63,32 +63,49 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
                     self.assertEqual(eval(f'lattice{i}').links_for_site(j, k)[0], eval(f'mat{i}'))
                     self.assertEqual(eval(f'lattice{i}').links_for_site(j, k)[1], eval(f'mat{i}'))
 
-    def test_PBCs_for_site_links(self):
+    def test_PBCs(self):
         M = self.lattice.lattice_height()
         N = self.lattice.lattice_width()
 
         # test wrap around in both directions
-        self.assertListEqual(self.lattice.links_for_site(M, 0).tolist(), self.lattice.links_for_site(0, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(0, N).tolist(), self.lattice.links_for_site(0, 0).tolist())
+        self.assertTupleEqual(self.lattice.index_with_PBCs(M, 0), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, N), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(M + 1, 0), (1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, N + 1), (0, 1))
 
         # test wrap around for index > 2 * size
-        self.assertListEqual(self.lattice.links_for_site(0, 2 * N).tolist(), self.lattice.links_for_site(0, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(2 * M, 0).tolist(), self.lattice.links_for_site(0, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(0, 2 * N).tolist(), self.lattice.links_for_site(0, 0).tolist())
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, 2 * N), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(2 * M, 0), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, 2 * N - 1), (0, N - 1))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(2 * M - 1, 0), (M - 1, 0))
 
         # test for negative indices
-        self.assertListEqual(self.lattice.links_for_site(-1, 0).tolist(), self.lattice.links_for_site(M - 1, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(0, -1).tolist(), self.lattice.links_for_site(0, N - 1).tolist())
-        self.assertListEqual(self.lattice.links_for_site(-M, 0).tolist(), self.lattice.links_for_site(M - 1, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(0, -N).tolist(), self.lattice.links_for_site(0, N - 1).tolist())
-        self.assertListEqual(self.lattice.links_for_site(-2 * M, 0).tolist(),
-                             self.lattice.links_for_site(M - 1, 0).tolist())
-        self.assertListEqual(self.lattice.links_for_site(0, -2 * N).tolist(),
-                             self.lattice.links_for_site(0, N - 1).tolist())
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-1, 0), (M - 1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -1), (0, N - 1))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-M, 0), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -N), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-M + 1, 0), (1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -N + 1), (0, 1))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-M - 1, 0), (M - 1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -N - 1), (0, N - 1))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-2 * M, 0), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -2 * N), (0, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-2 * M + 1, 0), (1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -2 * N + 1), (0, 1))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-2 * M - 1, 0), (M - 1, 0))
+        self.assertTupleEqual(self.lattice.index_with_PBCs(0, -2 * N - 1), (0, N - 1))
 
         # test wrap around can occur in both directions simultaneously
-        self.assertListEqual(self.lattice.links_for_site(-1, N).tolist(),
-                             self.lattice.links_for_site(M - 1, 0).tolist())
+        self.assertTupleEqual(self.lattice.index_with_PBCs(-1, N), (M - 1, 0))
+
+    def test_links_for_sites(self):
+        self.assertEqual(self.lattice.links_for_site(0, 0).all(), self.lattice.link_variables[0, 0].all())
+        self.assertEqual(self.lattice.links_for_site(self.lattice.lattice_width(), self.lattice.lattice_height()).all(),
+                         self.lattice.link_variables[0, 0].all())
+        self.assertEqual(self.lattice.links_for_site(1, 1).all(), self.lattice.link_variables[1, 1].all())
+        self.assertEqual(self.lattice.links_for_site(0, 1).all(), self.lattice.link_variables[0, 1].all())
+        self.assertEqual(self.lattice.links_for_site(self.lattice.lattice_width() + 1, 0).all(),
+                         self.lattice.link_variables[1, 0].all())
 
     def test_leftwards_link_inverse_of_rightwards(self):
         # check this works for two rows of the lattice
@@ -115,6 +132,34 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
                          self.lattice.downward_link(self.lattice.lattice_height() - 1, 0).inverse())
         self.assertEqual(self.lattice.upward_link(0, 1),
                          self.lattice.downward_link(self.lattice.lattice_height() - 1, 1).inverse())
+
+    def test_rightwards_links_updated(self):
+        mat1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
+        mat2 = SU2Matrix(a=0, b=1, c=-1, d=0)
+        mat3 = SU2Matrix(a=1j, b=0, c=0, d=-1j)
+        self.assertNotEqual(self.lattice.rightward_link(0, 0), mat1)
+        self.assertNotEqual(self.lattice.rightward_link(0, 0), mat2)
+        self.assertNotEqual(self.lattice.rightward_link(0, 0), mat3)
+        self.lattice.update_rightward_link(0, 0, mat1)
+        self.assertEqual(self.lattice.rightward_link(0, 0), mat1)
+        self.lattice.update_rightward_link(0, 0, mat2)
+        self.assertEqual(self.lattice.rightward_link(0, 0), mat2)
+        self.lattice.update_rightward_link(0, 0, mat3)
+        self.assertEqual(self.lattice.rightward_link(0, 0), mat3)
+
+    def test_upwards_links_updated(self):
+        mat1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
+        mat2 = SU2Matrix(a=0, b=1, c=-1, d=0)
+        mat3 = SU2Matrix(a=1j, b=0, c=0, d=-1j)
+        self.assertNotEqual(self.lattice.upward_link(0, 0), mat1)
+        self.assertNotEqual(self.lattice.upward_link(0, 0), mat2)
+        self.assertNotEqual(self.lattice.upward_link(0, 0), mat3)
+        self.lattice.update_upward_link(0, 0, mat1)
+        self.assertEqual(self.lattice.upward_link(0, 0), mat1)
+        self.lattice.update_rightward_link(0, 0, mat2)
+        self.assertEqual(self.lattice.upward_link(0, 0), mat2)
+        self.lattice.update_upward_link(0, 0, mat3)
+        self.assertEqual(self.lattice.upward_link(0, 0), mat3)
 
     def test_action_is_real(self):
         self.assertEqual(np.real(self.lattice.action()), self.lattice.action())

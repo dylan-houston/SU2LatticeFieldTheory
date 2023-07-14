@@ -10,7 +10,7 @@ class LatticeGaugeTheory2D:
 
     def __init__(self, M=20, N=20, beta=4, uniform_initialisation_matrix=None, random_seed=None):
         """
-        Sets up a 2D MxN lattice, with SU(2) matrices sitting on the links of the lattice.
+        Sets up a 2D periodic MxN lattice, with SU(2) matrices sitting on the links of the lattice.
 
         :param M: the height of the lattice
         :param N: the width of the lattice
@@ -51,67 +51,79 @@ class LatticeGaugeTheory2D:
     def beta_value(self):
         return self.beta
 
-    def links_for_site(self, i, j):
+    def index_with_PBCs(self, y_index, x_index):
         """
-        Return the upwards and rightwards links for each site. Periodic boundary conditions are used on this lattice, so
-        if the supplied indices lie outside the ranges for i and j, [0, M) and [0, N), they will be translated into
-        this range, e.g. if i = M, then this corresponds to i = 0, if i = -1 this corresponds to i = M - 1, etc.
+        Calculates the correct indices using periodic boundary conditions. If the supplied indices lie outside the
+        ranges for i and j, [0, M) and [0, N), they will be translated into this range, e.g. if i = M, then this
+        corresponds to i = 0, if i = -1 this corresponds to i = M - 1, etc.
 
-        :param i: Site index in the y (up-down) direction
-        :param j: Site index in the x (left-right) direction
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
+        :return: (y_index, x_index)
+        """
+        if y_index >= 0:
+            y_index = y_index % self.lattice_height()
+        else:
+            y_index = (np.abs(y_index // self.lattice_height()) * self.lattice_height() + y_index) % self.lattice_height()
+
+        if x_index >= 0:
+            x_index = x_index % self.lattice_width()
+        else:
+            x_index = (np.abs(x_index // self.lattice_width()) * self.lattice_width() + x_index) % self.lattice_width()
+
+        return y_index, x_index
+
+    def links_for_site(self, y_index, x_index):
+        """
+        Return the upwards and rightwards links for each site.
+
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
         :return: [rightward link, upwards link]
         """
-        if i >= 0:
-            i = i % self.lattice_height()
-        else:
-            i = (-i - 1) % self.lattice_height()
+        y_index, x_index = self.index_with_PBCs(y_index, x_index)
 
-        if j >= 0:
-            j = j % self.lattice_width()
-        else:
-            j = (-j - 1) % self.lattice_width()
+        return self.link_variables[y_index, x_index]
 
-        return self.link_variables[i, j]
-
-    def rightward_link(self, i, j):
+    def rightward_link(self, y_index, x_index):
         """
         Returns the rightward link matrix of a lattice site. Rightward to mean in the +ve x-direction.
 
-        :param i: Site index in the y (up-down) direction
-        :param j: Site index in the x (left-right) direction
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
         """
-        return self.links_for_site(i, j)[0]
+        return self.links_for_site(y_index, x_index)[0]
 
-    def leftward_link(self, i, j):
+    def leftward_link(self, y_index, x_index):
         """
         Returns the leftward link matrix of a lattice site. Leftward to mean in the -ve x-direction.
 
         The leftward link is the inverse of the rightward link for the site (y, x) = (i, j - 1).
 
-        :param i: Site index in the y (up-down) direction
-        :param j: Site index in the x (left-right) direction
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
         """
-        return self.links_for_site(i, j - 1)[0].inverse()
+        return self.links_for_site(y_index, x_index - 1)[0].inverse()
 
-    def upward_link(self, i, j):
+    def upward_link(self, y_index, x_index):
         """
         Returns the upward link matrix of a lattice site. Upward to mean in the +ve y-direction.
 
-        :param i: Site index in the y (up-down) direction
-        :param j: Site index in the x (left-right) direction:
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
         """
-        return self.links_for_site(i, j)[1]
+        return self.links_for_site(y_index, x_index)[1]
 
-    def downward_link(self, i, j):
+    def downward_link(self, y_index, x_index):
         """
         Returns the downward link matrix of a lattice site. Downward to mean in the -ve y-direction.
 
         The downward link is the inverse of the rightward link for the site (y, x) = (i - 1, j).
 
-        :param i: Site index in the y (up-down) direction
-        :param j: Site index in the x (left-right) direction:
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
         """
-        return self.links_for_site(i - 1, j)[1].inverse()
+        return self.links_for_site(y_index - 1, x_index)[1].inverse()
 
     def action(self):
         """
@@ -126,6 +138,32 @@ class LatticeGaugeTheory2D:
                 action += plaquette(self, j, i)
 
         return action
+
+    def update_rightward_link(self, y_index, x_index, U: SU2Matrix):
+        """
+        Updates the rightward link matrix of a lattice site. Rightward to mean in the +ve x-direction.
+
+        This will also update the leftward link from site (y, x) = (i, j - 1), as that is the inverse of this link.
+
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
+        :param U: The new link SU2Matrix.
+        """
+        y_index, x_index = self.index_with_PBCs(y_index, x_index)
+        self.link_variables[y_index, x_index, 0] = U
+
+    def update_upward_link(self, y_index, x_index, U: SU2Matrix):
+        """
+        Updates the upward link matrix of a lattice site. Upward to mean in the +ve y-direction.
+
+        This will also update the downward link from site (y, x) = (i - 1, j), as that is the inverse of this link.
+
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
+        :param U: The new link SU2Matrix.
+        """
+        y_index, x_index = self.index_with_PBCs(y_index, x_index)
+        self.link_variables[y_index, x_index, 1] = U
 
 
 def plaquette(lattice: LatticeGaugeTheory2D, site_x, site_y):
