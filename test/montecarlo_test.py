@@ -46,3 +46,11 @@ class LatticeMetropolisTest(unittest.TestCase):
         for matrix in shifted_matrices:
             self.assertTrue(matrix.is_special_unitary())
 
+    def test_action_is_real_after_site_metropolis_steps(self):
+        # perform 100 metropolis steps, so that some will accept and some will reject
+        for _ in range(100):
+            random_x = np.random.randint(self.lattice.lattice_width())
+            random_y = np.random.randint(self.lattice.lattice_height())
+            self.metropolis.site_step(random_x, random_y)
+            action = self.lattice.action()
+            self.assertEquals(action, np.real(action))

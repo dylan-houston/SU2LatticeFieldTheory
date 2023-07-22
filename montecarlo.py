@@ -5,9 +5,8 @@
 # if vertical link is chosen, co-boundary will be plaquettes starting at (x, y) and (x - 1, y)
 
 import numpy as np
-from scipy.linalg import expm
 
-from lattice2d import LatticeGaugeTheory2D
+from lattice2d import LatticeGaugeTheory2D, plaquette
 from su2matrices import SU2Matrix
 
 
@@ -21,10 +20,37 @@ class LatticeMetropolis:
 
     def site_step(self, x_index, y_index):
         """
-        Performs the metropolis update at the site level. Each link will be updated and the change will either be
+        Performs the metropolis update at the site level. The upwards and downwards links will both have candidate
+        updates carried out and the metropolis test will be carried out on each one and each change will either be
         accepted or rejected.
         """
-        pass
+        # the matrices to attempt to update
+        right_link = self.lattice.rightward_link(y_index, x_index)
+        up_link = self.lattice.upward_link(y_index, x_index)
+
+        # calculates the plaquettes in the co-boundary of the links
+        up_plaquette_cobound = plaquette(self.lattice, x_index, y_index) + plaquette(self.lattice, x_index - 1, y_index)
+        right_plaquette_cobound = plaquette(self.lattice, x_index, y_index) + plaquette(self.lattice, x_index, y_index - 1)
+
+        # generates candidate updates
+        candidate_right_link = self.matrix_shift(right_link)
+        candidate_up_link = self.matrix_shift(up_link)
+        self.lattice.update_rightward_link(y_index, x_index, candidate_right_link)
+        self.lattice.update_upward_link(y_index, x_index, candidate_up_link)
+
+        # calculates the plaquettes in the co-boundary of the links
+        up_plaquette_cobound_new = plaquette(self.lattice, x_index, y_index) + plaquette(self.lattice, x_index - 1, y_index)
+        right_plaquette_cobound_new = plaquette(self.lattice, x_index, y_index) + plaquette(self.lattice, x_index, y_index - 1)
+
+        # finds the change in action for both updates
+        delta_S_up = up_plaquette_cobound_new - up_plaquette_cobound
+        delta_S_right = right_plaquette_cobound_new - right_plaquette_cobound
+
+        # perform metropolis test, keeping change if accepted and reverting if rejected
+        if not self.metropolis_test(delta_S_up):
+            self.lattice.update_upward_link(y_index, x_index, up_link)
+        if not self.metropolis_test(delta_S_right):
+            self.lattice.update_rightward_link(y_index, x_index, up_link)
 
     def matrix_shift(self, matrix):
         """
@@ -38,8 +64,8 @@ class LatticeMetropolis:
         a_r = np.random.normal(1, self.step_size, 1)[0]
         a_i, b_r, b_i = np.random.normal(0, self.step_size, 3)
 
-        a = a_r + 1j*a_i
-        b = b_r + 1j*b_i
+        a = a_r + 1j * a_i
+        b = b_r + 1j * b_i
 
         V = SU2Matrix(a=a, b=b)
 
@@ -54,11 +80,12 @@ class LatticeMetropolis:
 
     def metropolis_test(self, delta_S):
         """
-        Performs the Metropolis test. Generates some random number r el [0, 1). Ff r < exp(-Delta S) then the change
+        Performs the Metropolis test. Generates some random number r el [0, 1). If r < exp(-Delta S) then the change
         will be accepted. If r > exp(-Delta S) then the change will be rejected. If Delta S < 0 the change is
         immediately accepted.
 
         :param delta_S: the change in the action for the proposed update.
+        :returns: True if accepted.
         """
         r = np.random.rand()
 
