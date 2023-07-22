@@ -45,3 +45,4 @@ class LatticeMetropolisTest(unittest.TestCase):
 
         for matrix in shifted_matrices:
             self.assertTrue(matrix.is_special_unitary())
+

@@ -35,13 +35,11 @@ class LatticeMetropolis:
         """
         # generate a random special unitary matrix
         # these are generated with a standard deviation of the step size, with the mean being the identity matrix
-        a_r = np.random.normal(1, self.step_size, 1)
+        a_r = np.random.normal(1, self.step_size, 1)[0]
         a_i, b_r, b_i = np.random.normal(0, self.step_size, 3)
 
         a = a_r + 1j*a_i
         b = b_r + 1j*b_i
-        c = -b_r + 1j*b_i
-        d = a_r - 1j*b_i
 
         V = SU2Matrix(a=a, b=b)
 

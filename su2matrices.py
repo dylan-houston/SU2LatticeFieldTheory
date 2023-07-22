@@ -22,7 +22,7 @@ class SU2Matrix:
         """
         self.matrix = np.array([[a, b], [c, d]], dtype=complex)
 
-        if not is_matrix_special_unitary(self.matrix):
+        if not self.is_special_unitary():
             if a == 0 and b == 0 and c == 0 and d == 0:
                 np.random.seed(seed)
                 a = np.random.random() + np.random.random() * 1j
@@ -36,12 +36,18 @@ class SU2Matrix:
                 c = -np.conj(b)
                 d = np.conj(a)
 
-            vectors = [np.array([a, b]), np.array([c, d])]
+            self.matrix = np.array([[a, b], [c, d]], dtype=complex)
 
-            orthonormal_vectors = gram_schmidt(vectors)
+            if not self.is_special_unitary():
+                vectors = [np.array([a, b]), np.array([c, d])]
 
-            self.matrix = np.array([[orthonormal_vectors[0][0], orthonormal_vectors[0][1]],
-                                    [orthonormal_vectors[1][0], orthonormal_vectors[1][1]]], dtype=complex)
+                orthonormal_vectors = gram_schmidt(vectors)
+
+                self.matrix = np.array([[orthonormal_vectors[0][0], orthonormal_vectors[0][1]],
+                                        [orthonormal_vectors[1][0], orthonormal_vectors[1][1]]], dtype=complex)
+
+        if not self.is_special_unitary():
+            raise RuntimeError('SU(2) matrix could not be generated.')
 
     def hermitian_conjugate(self):
         """
