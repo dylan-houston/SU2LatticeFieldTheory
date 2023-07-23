@@ -19,13 +19,20 @@ class LatticeGaugeTheory2D:
             of this matrix sitting on each link, if not supplied then there will be a random initialisation.
         :param random_seed: The random seed to use if link matrices are randomly generated. Default=`None`
         """
+        self.site_group_elements = np.empty((M, N), dtype=SU2Matrix)
+        self.size = (M, N)
+        self.beta = beta
+
+        # put an arbitrary group element on each site
+        for i in range(M):
+            for j in range(N):
+                self.site_group_elements[i, j] = SU2Matrix()
+
         # link variables do not sit on the sites, they sit on the links between sites
         # this would imply 4 link variables per site, but traversing backwards along a link (i.e. from j -> i rather
         # than i -> j) uses the same matrix, just inverted. As such, only two link variables are needed per site, taken
         # to be that going upwards and that going rightwards
         self.link_variables = np.empty((M, N, 2), dtype=SU2Matrix)
-        self.size = (M, N)
-        self.beta = beta
 
         if uniform_initialisation_matrix is not None:
             if type(uniform_initialisation_matrix) == SU2Matrix:
@@ -84,6 +91,18 @@ class LatticeGaugeTheory2D:
         y_index, x_index = self.index_with_PBCs(y_index, x_index)
 
         return self.link_variables[y_index, x_index]
+
+    def site_group_element(self, y_index, x_index):
+        """
+        Return the group element associated with each site.
+
+        :param y_index: Site index in the y (up-down) direction
+        :param x_index: Site index in the x (left-right) direction
+        :return: the SU2Matrix associated with this site.
+        """
+        y_index, x_index = self.index_with_PBCs(y_index, x_index)
+
+        return self.site_group_elements[y_index, x_index]
 
     def rightward_link(self, y_index, x_index):
         """

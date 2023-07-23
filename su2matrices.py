@@ -90,6 +90,46 @@ class SU2Matrix:
         """
         return np.trace(self.matrix)
 
+    def _multiply_by(self, matrix, left, su2_result):
+        """
+        Internal method.
+        Multiplies this matrix by the supplied matrix either to the left or to the right.
+
+        :param matrix: Either an SU2Matrix or a regular array-based matrix.
+        :param left: True if left multiplying, False if right multiplying.
+        :param su2_result: Whether to return the result as an SU2Matrix. Default=True. If this option is selected but
+            the result is not an valid SU(2) element, an exception will be raised.
+        :return: Either a numpy array as the result (if su2_result=False) or an SU2Matrix.
+        """
+        if su2_result:
+            if type(matrix) == SU2Matrix:
+                # the product of 2 SU(2) matrices will be an SU(2) matrix, so no checks needed
+                if left:
+                    prod = matrix.matrix @ self.matrix
+                else:
+                    prod = self.matrix @ matrix.matrix
+                a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
+                return SU2Matrix(a=a, b=b, c=c, d=d)
+            else:
+                # if matrix is an SU(2) matrix, but just not an SU2Matrix object the result will be an SU(2) matrix
+                # but a check has to be carried out, in case it is not
+                if left:
+                    prod = matrix @ self.matrix
+                else:
+                    prod = self.matrix @ matrix
+                if is_matrix_special_unitary(prod):
+                    a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
+                    return SU2Matrix(a=a, b=b, c=c, d=d)
+                else:
+                    raise ValueError('Cannot produce an SU2Matrix object from this product.')
+        else:
+            if type(matrix) == SU2Matrix:
+                matrix = matrix.matrix
+            if left:
+                return matrix @ self.matrix
+            else:
+                return self.matrix @ matrix
+
     def right_multiply_by(self, matrix, su2_result=True):
         """
         Multiplies this matrix by the supplied matrix to the right. Call this matrix U0 and the supplied matrix U, then
@@ -100,25 +140,19 @@ class SU2Matrix:
             the result is not an valid SU(2) element, an exception will be raised.
         :return: Either a numpy array as the result (if su2_result=False) or an SU2Matrix.
         """
-        if su2_result:
-            if type(matrix) == SU2Matrix:
-                # the product of 2 SU(2) matrices will be an SU(2) matrix, so no checks needed
-                prod = self.matrix @ matrix.matrix
-                a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
-                return SU2Matrix(a=a, b=b, c=c, d=d)
-            else:
-                # if matrix is an SU(2) matrix, but just not an SU2Matrix object the result will be an SU(2) matrix
-                # but a check has to be carried out, in case it is not
-                prod = self.matrix @ matrix
-                if is_matrix_special_unitary(prod):
-                    a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
-                    return SU2Matrix(a=a, b=b, c=c, d=d)
-                else:
-                    raise ValueError('Cannot produce an SU2Matrix object from this product.')
-        else:
-            if type(matrix) == SU2Matrix:
-                matrix = matrix.matrix
-            return self.matrix @ matrix
+        return self._multiply_by(matrix, False, su2_result)
+
+    def left_multiply_by(self, matrix, su2_result=True):
+        """
+        Multiplies this matrix by the supplied matrix to the left. Call this matrix U0 and the supplied matrix U, then
+        the operation carried out is U @ U0.
+
+        :param matrix: Either an SU2Matrix or a regular array-based matrix.
+        :param su2_result: Whether to return the result as an SU2Matrix. Default=True. If this option is selected but
+            the result is not an valid SU(2) element, an exception will be raised.
+        :return: Either a numpy array as the result (if su2_result=False) or an SU2Matrix.
+        """
+        return self._multiply_by(matrix, True, su2_result)
 
     def __eq__(self, other):
         if type(other) == SU2Matrix:

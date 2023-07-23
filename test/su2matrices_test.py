@@ -146,13 +146,15 @@ class SU2MatricesTest(unittest.TestCase):
         self.assertEqual(np.linalg.inv(mat1.matrix).all(), inv1.matrix.all())
         self.assertEqual(np.linalg.inv(mat2.matrix).all(), inv2.matrix.all())
 
-    def test_right_multiply_valid_su2_result(self):
+    def test_multiply_valid_su2_result(self):
         matrix1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
 
         matrix2 = SU2Matrix(a=0, b=1, c=-1, d=0)
         matrix2_list = [[0, 1], [-1, 0]]
         matrix2_arr = np.array(matrix2_list)
 
+        # both left and right multiply use same method, will just produce different result. Check machinery using only
+        # one then test result using both
         # test all of these succeed and are of the right type
         self.assertIsInstance(matrix1.right_multiply_by(matrix2_list), SU2Matrix)
         self.assertIsInstance(matrix1.right_multiply_by(matrix2_arr), SU2Matrix)
@@ -172,6 +174,8 @@ class SU2MatricesTest(unittest.TestCase):
         # check the correct result is obtained
         self.assertEqual(matrix1.right_multiply_by(matrix2).matrix.all(), (matrix1.matrix @ matrix2.matrix).all())
         self.assertEqual(matrix2.right_multiply_by(matrix1).matrix.all(), (matrix2.matrix @ matrix1.matrix).all())
+        self.assertEqual(matrix1.left_multiply_by(matrix2).matrix.all(), (matrix2.matrix @ matrix1.matrix).all())
+        self.assertEqual(matrix2.left_multiply_by(matrix1).matrix.all(), (matrix1.matrix @ matrix2.matrix).all())
 
     def test_right_multiply_invalid_su2_with_su2_result(self):
         matrix1 = SU2Matrix(a=0, b=1j, c=1j, d=0)

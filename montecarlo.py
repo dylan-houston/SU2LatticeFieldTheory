@@ -1,9 +1,3 @@
-# pick random point
-# then pick either up or down link at random
-# when finding change in action, only find for co-boundary
-# if horizontal link is chosen, co-boundary will be the plaquettes starting at (x, y) and (x, y-1)
-# if vertical link is chosen, co-boundary will be plaquettes starting at (x, y) and (x - 1, y)
-
 import numpy as np
 
 from lattice2d import LatticeGaugeTheory2D, plaquette

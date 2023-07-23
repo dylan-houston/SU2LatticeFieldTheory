@@ -46,6 +46,11 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
                 self.assertEqual(lattice.links_for_site(i, j)[0], matrices[2 * (i+j)])
                 self.assertEqual(lattice.links_for_site(i, j)[1], matrices[2 * (i + j) + 1])
 
+    def test_site_has_group_elements(self):
+        for i in range(self.lattice.lattice_width()):
+            for j in range(self.lattice.lattice_height()):
+                self.assertIsInstance(self.lattice.site_group_element(j, i), SU2Matrix)
+
     def test_seed_ignored_when_initialisation_matrix_supplied(self):
         mat1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
         mat2 = SU2Matrix(a=0, b=1, c=-1, d=0)
@@ -163,6 +168,60 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
 
     def test_action_is_real(self):
         self.assertEqual(np.real(self.lattice.action()), self.lattice.action())
+
+    def test_action_is_invariant_under_one_gauge_transformation(self):
+        action_before = self.lattice.action()
+        actions = np.zeros(100)
+
+        # perform 100 tests. On each test pick a random site and a random link from that site and perform the gauge
+        # transformation U_ij -> g_i U_ij (g_j)^(-1). Find the action and save it
+        for i in range(100):
+            random_x = np.random.randint(self.lattice.lattice_width())
+            random_y = np.random.randint(self.lattice.lattice_height())
+
+            # generate a random number in [0, 1), if >=0.5 then use the upwards link, otherwise use the rightward link
+            random_link = np.random.rand()
+            up = random_link >= 0.5
+
+            if up:
+                up_link = self.lattice.upward_link(random_y, random_x)
+                transformed_up_link = up_link.left_multiply_by(self.lattice.site_group_element(random_y, random_x))
+                transformed_up_link = transformed_up_link.right_multiply_by(
+                    self.lattice.site_group_element(random_y + 1, random_x).inverse())
+
+                # check the matrix multiplication was actually carried out correctly
+                matrix_prod = self.lattice.site_group_element(random_y, random_x).matrix @ up_link.matrix @ \
+                    self.lattice.site_group_element(random_y + 1, random_x).inverse().matrix
+                self.assertEqual(transformed_up_link.matrix.all(), matrix_prod.all())
+
+                # check lattice action is the same
+                self.lattice.update_upward_link(random_y, random_x, transformed_up_link)
+                actions[i] = self.lattice.action()
+
+                # revert back to original state
+                self.lattice.update_upward_link(random_y, random_x, up_link)
+            else:
+                right_link = self.lattice.rightward_link(random_y, random_x)
+                transformed_right_link = right_link.left_multiply_by(
+                    self.lattice.site_group_element(random_y, random_x))
+                transformed_right_link = transformed_right_link.right_multiply_by(
+                    self.lattice.site_group_element(random_y, random_x + 1).inverse())
+
+                # check the matrix multiplication was actually carried out correctly
+                matrix_prod = self.lattice.site_group_element(random_y, random_x).matrix @ right_link.matrix @ \
+                    self.lattice.site_group_element(random_y, random_x + 1).inverse().matrix
+                self.assertEqual(transformed_right_link.matrix.all(), matrix_prod.all())
+
+                # check lattice action is the same
+                self.lattice.update_rightward_link(random_y, random_x, transformed_right_link)
+                actions[i] = self.lattice.action()
+
+                # revert back to original state
+                self.lattice.update_rightward_link(random_y, random_x, right_link)
+
+        # find the average of the new action difference, must be within 1% of the original action
+        action_diff = actions - action_before
+        self.assertLessEqual(action_diff.mean(), action_before * 0.01)
 
 
 if __name__ == '__main__':
