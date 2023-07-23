@@ -1,3 +1,5 @@
+from time import time
+
 import numpy as np
 
 from lattice2d import LatticeGaugeTheory2D, plaquette
@@ -11,6 +13,54 @@ class LatticeMetropolis:
         self.step_size = step_size
 
         np.random.seed(seed)
+
+    def run_metropolis(self, n_runs=100):
+        print('----- Starting Metropolis -----')
+        start_time = time()
+
+        step_actions = np.empty(n_runs)
+        step_acceptance_rates = np.empty(n_runs)
+
+        for run in range(n_runs):
+            print(f'Starting run {run + 1}')
+            run_start_time = time()
+
+            site_order = self.generate_random_lattice_step_through_sequence()
+            n_acceptances_in_step = 0
+            for y_index, x_index in site_order:
+                up_accept, right_accept = self.site_step(x_index, y_index)
+                n_acceptances_in_step += up_accept + right_accept
+
+            step_acceptance_rates[run] = n_acceptances_in_step / (self.lattice.lattice_width() *
+                                                                  self.lattice.lattice_height() * 2)
+            step_actions[run] = self.lattice.action()
+
+            print(f'Run {run + 1} completed in {time() - run_start_time} seconds.\n'
+                  f'    Acceptance Rate = {step_acceptance_rates[run]}'
+                  f'    Action = {step_actions[run]}')
+
+        print(f'----- Metropolis Completed in {time() - start_time} seconds -----')
+        print(f'Average Acceptance Rate {step_acceptance_rates.mean()}')
+        return step_actions, step_acceptance_rates
+
+    def generate_random_lattice_step_through_sequence(self):
+        """
+        Generates a random order to step through the lattice in. Each site will be visited in each Markov step, in a
+        random order. To run each Markov step stepping through the lattice in a random order, this array can be stepped
+        through sequentially.
+
+        :returns: A (M*N, 2) sized array. Each entry it [y_index, x_index].
+        """
+        pairs = np.empty((self.lattice.lattice_height() * self.lattice.lattice_width(), 2), dtype=int)
+        for i in range(self.lattice.lattice_height()):
+            row_order = np.arange(0, self.lattice.lattice_width())
+            row_pairs = row_order.reshape((self.lattice.lattice_width(), 1))
+            row_number = np.ones((self.lattice.lattice_width(), 1)) * i
+            row_pairs = np.concatenate((row_number, row_pairs), axis=1)
+            pairs[i * self.lattice.lattice_width():
+                  i * self.lattice.lattice_width() + self.lattice.lattice_width()] = row_pairs
+        np.random.shuffle(pairs)
+        return pairs
 
     def site_step(self, x_index, y_index):
         """
@@ -41,10 +91,14 @@ class LatticeMetropolis:
         delta_S_right = right_plaquette_cobound_new - right_plaquette_cobound
 
         # perform metropolis test, keeping change if accepted and reverting if rejected
-        if not self.metropolis_test(delta_S_up):
+        up_accept = self.metropolis_test(delta_S_up)
+        right_accept = self.metropolis_test(delta_S_right)
+        if not up_accept:
             self.lattice.update_upward_link(y_index, x_index, up_link)
-        if not self.metropolis_test(delta_S_right):
+        if not right_accept:
             self.lattice.update_rightward_link(y_index, x_index, up_link)
+
+        return [up_accept, right_accept]
 
     def matrix_shift(self, matrix):
         """

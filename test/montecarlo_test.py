@@ -54,3 +54,12 @@ class LatticeMetropolisTest(unittest.TestCase):
             self.metropolis.site_step(random_x, random_y)
             action = self.lattice.action()
             self.assertEquals(action, np.real(action))
+
+    def test_each_site_pair_visited(self):
+        site_pairs = self.metropolis.generate_random_lattice_step_through_sequence()
+        for i in range(self.lattice.lattice_height()):
+            for j in range(self.lattice.lattice_width()):
+                pair = np.array([i, j])
+                self.assertTrue(pair in site_pairs)
+
+        self.assertEqual(self.lattice.lattice_height() * self.lattice.lattice_width(), len(site_pairs))
