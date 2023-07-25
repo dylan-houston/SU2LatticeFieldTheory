@@ -1,9 +1,10 @@
 from time import time
 
 import numpy as np
+from scipy.linalg import expm
 
 from lattice2d import LatticeGaugeTheory2D, plaquette
-from su2matrices import SU2Matrix
+from su2matrices import SU2Matrix, get_abcd_values_from_2x2_matrix
 
 
 class LatticeMetropolis:
@@ -14,9 +15,11 @@ class LatticeMetropolis:
 
         np.random.seed(seed)
 
-    def run_metropolis(self, n_runs=100):
+    def run_metropolis(self, n_runs=300):
         print('----- Starting Metropolis -----')
         start_time = time()
+
+        cumulative_action = 0
 
         step_actions = np.empty(n_runs)
         step_acceptance_rates = np.empty(n_runs)
@@ -33,7 +36,8 @@ class LatticeMetropolis:
 
             step_acceptance_rates[run] = n_acceptances_in_step / (self.lattice.lattice_width() *
                                                                   self.lattice.lattice_height() * 2)
-            step_actions[run] = self.lattice.action()
+            cumulative_action += self.lattice.action()
+            step_actions[run] = cumulative_action / (run + 1)
 
             print(f'Run {run + 1} completed in {time() - run_start_time} seconds.\n'
                   f'    Acceptance Rate = {step_acceptance_rates[run]}'
@@ -96,7 +100,7 @@ class LatticeMetropolis:
         if not up_accept:
             self.lattice.update_upward_link(y_index, x_index, up_link)
         if not right_accept:
-            self.lattice.update_rightward_link(y_index, x_index, up_link)
+            self.lattice.update_rightward_link(y_index, x_index, right_link)
 
         return [up_accept, right_accept]
 
@@ -107,15 +111,13 @@ class LatticeMetropolis:
 
         :param matrix: the SU2Matrix to update.
         """
-        # generate a random special unitary matrix
-        # these are generated with a standard deviation of the step size, with the mean being the identity matrix
-        a_r = np.random.normal(1, self.step_size, 1)[0]
-        a_i, b_r, b_i = np.random.normal(0, self.step_size, 3)
+        w, x, y, z = np.random.uniform(-1, 1, 4)
 
-        a = a_r + 1j * a_i
-        b = b_r + 1j * b_i
+        H = np.array([[x, y + z*1j], [y - z*1j, w]])
 
-        V = SU2Matrix(a=a, b=b)
+        V = expm(-1j * self.step_size * H)
+        a, b, c, d = get_abcd_values_from_2x2_matrix(V)
+        V = SU2Matrix(a=a, b=b, c=c, d=d)
 
         # this matrix and its hermitian conjugate should be equally probable to ensure detail balance, so randomly
         # choose one
@@ -135,7 +137,7 @@ class LatticeMetropolis:
         :param delta_S: the change in the action for the proposed update.
         :returns: True if accepted.
         """
-        r = np.random.rand()
+        r = np.random.uniform()
 
         if delta_S <= 0:
             return True

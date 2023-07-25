@@ -55,7 +55,8 @@ class SU2Matrix:
 
         :return: The Hermitian conjugate
         """
-        return self.matrix.conj().T
+        a, b, c, d = get_abcd_values_from_2x2_matrix(self.matrix.conj().T)
+        return SU2Matrix(a, b, c, d)
 
     def is_special_unitary(self):
         """
@@ -117,11 +118,8 @@ class SU2Matrix:
                     prod = matrix @ self.matrix
                 else:
                     prod = self.matrix @ matrix
-                if is_matrix_special_unitary(prod):
-                    a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
-                    return SU2Matrix(a=a, b=b, c=c, d=d)
-                else:
-                    raise ValueError('Cannot produce an SU2Matrix object from this product.')
+                a, b, c, d = get_abcd_values_from_2x2_matrix(prod)
+                return SU2Matrix(a=a, b=b, c=c, d=d)
         else:
             if type(matrix) == SU2Matrix:
                 matrix = matrix.matrix
