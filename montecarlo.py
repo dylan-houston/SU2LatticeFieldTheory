@@ -7,47 +7,66 @@ from lattice2d import LatticeGaugeTheory2D, plaquette
 from su2matrices import SU2Matrix, get_abcd_values_from_2x2_matrix
 
 
-class LatticeMetropolis:
+class LatticeMarkovChain:
 
     def __init__(self, lattice: LatticeGaugeTheory2D, seed=None, step_size=0.1):
         self.lattice = lattice
         self.step_size = step_size
 
+        self.markov_chain_configs = [lattice.save_configuration_copy()]
+
         np.random.seed(seed)
 
     def run_metropolis(self, n_runs=300):
+        """
+        Runs the metropolis algorithm to update the lattice and produce a Markov Chain. This function returns an array
+        of action expectation values up to each point in the Markov Chain and the average acceptance rate.
+
+        :param n_runs: The number of runs of the algorithm, i.e. the number of steps in the Markov Chain.
+        :returns: average_actions_through_chain, average_acceptance_rate
+        """
         print('----- Starting Metropolis -----')
         start_time = time()
 
         cumulative_action = 0
+        average_action_through_chain = np.empty(n_runs)
 
-        step_actions = np.empty(n_runs)
-        step_acceptance_rates = np.empty(n_runs)
+        acceptance_rates = np.empty(n_runs)
 
         for run in range(n_runs):
             print(f'Starting run {run + 1}')
             run_start_time = time()
 
-            site_order = self.generate_random_lattice_step_through_sequence()
+            # create a random order to go through the whole lattice for this step
+            site_order = self._generate_random_lattice_step_through_sequence()
+
+            # go through the lattice in the specified order, noting whether the change to the upwards and rightwards
+            # link was accepted or not to produce an acceptance rate.
             n_acceptances_in_step = 0
             for y_index, x_index in site_order:
-                up_accept, right_accept = self.site_step(x_index, y_index)
+                up_accept, right_accept = self._metropolis_site_step(x_index, y_index)
                 n_acceptances_in_step += up_accept + right_accept
 
-            step_acceptance_rates[run] = n_acceptances_in_step / (self.lattice.lattice_width() *
-                                                                  self.lattice.lattice_height() * 2)
+            acceptance_rates[run] = n_acceptances_in_step / (self.lattice.lattice_width() *
+                                                             self.lattice.lattice_height() * 2)
+
+            # find the average action for this and all other prior configurations in the Markov Chain
             cumulative_action += self.lattice.action()
-            step_actions[run] = cumulative_action / (run + 1)
+            average_action_through_chain[run] = cumulative_action / (run + 1)
+
+            # save this configuration
+            self.markov_chain_configs.append(self.lattice.save_configuration_copy())
 
             print(f'Run {run + 1} completed in {time() - run_start_time} seconds.\n'
-                  f'    Acceptance Rate = {step_acceptance_rates[run]}'
-                  f'    Action = {step_actions[run]}')
+                  f'    Acceptance Rate = {acceptance_rates[run]}'
+                  f'    Action = {average_action_through_chain[run]}')
 
         print(f'----- Metropolis Completed in {time() - start_time} seconds -----')
-        print(f'Average Acceptance Rate {step_acceptance_rates.mean()}')
-        return step_actions, step_acceptance_rates
+        print(f'Average Acceptance Rate {acceptance_rates.mean()}')
 
-    def generate_random_lattice_step_through_sequence(self):
+        return average_action_through_chain, acceptance_rates.mean()
+
+    def _generate_random_lattice_step_through_sequence(self):
         """
         Generates a random order to step through the lattice in. Each site will be visited in each Markov step, in a
         random order. To run each Markov step stepping through the lattice in a random order, this array can be stepped
@@ -66,7 +85,7 @@ class LatticeMetropolis:
         np.random.shuffle(pairs)
         return pairs
 
-    def site_step(self, x_index, y_index):
+    def _metropolis_site_step(self, x_index, y_index):
         """
         Performs the metropolis update at the site level. The upwards and downwards links will both have candidate
         updates carried out and the metropolis test will be carried out on each one and each change will either be
@@ -81,8 +100,8 @@ class LatticeMetropolis:
         right_plaquette_cobound = plaquette(self.lattice, x_index, y_index) + plaquette(self.lattice, x_index, y_index - 1)
 
         # generates candidate updates
-        candidate_right_link = self.matrix_shift(right_link)
-        candidate_up_link = self.matrix_shift(up_link)
+        candidate_right_link = self._metropolis_matrix_shift(right_link)
+        candidate_up_link = self._metropolis_matrix_shift(up_link)
         self.lattice.update_rightward_link(y_index, x_index, candidate_right_link)
         self.lattice.update_upward_link(y_index, x_index, candidate_up_link)
 
@@ -95,8 +114,8 @@ class LatticeMetropolis:
         delta_S_right = right_plaquette_cobound_new - right_plaquette_cobound
 
         # perform metropolis test, keeping change if accepted and reverting if rejected
-        up_accept = self.metropolis_test(delta_S_up)
-        right_accept = self.metropolis_test(delta_S_right)
+        up_accept = self._metropolis_test(delta_S_up)
+        right_accept = self._metropolis_test(delta_S_right)
         if not up_accept:
             self.lattice.update_upward_link(y_index, x_index, up_link)
         if not right_accept:
@@ -104,7 +123,7 @@ class LatticeMetropolis:
 
         return [up_accept, right_accept]
 
-    def matrix_shift(self, matrix):
+    def _metropolis_matrix_shift(self, matrix):
         """
         Generates an update to the SU2Matrix provided, by generating a random SU2Matrix with two random, complex entries
         that have a real and imaginary part smaller than the step size.
@@ -128,7 +147,7 @@ class LatticeMetropolis:
         # create the shifted matrix
         return matrix.right_multiply_by(V)
 
-    def metropolis_test(self, delta_S):
+    def _metropolis_test(self, delta_S):
         """
         Performs the Metropolis test. Generates some random number r el [0, 1). If r < exp(-Delta S) then the change
         will be accepted. If r > exp(-Delta S) then the change will be rejected. If Delta S < 0 the change is
@@ -143,3 +162,36 @@ class LatticeMetropolis:
             return True
 
         return r < np.exp(-delta_S)
+
+    def trim_first_n_steps(self, n):
+        """
+        Removes the first n entries from the Markov Chain. Note that the chain will be re-indexed after this, so that
+        i' = i - n.
+
+        :param n: The number of steps to remove.
+        """
+        self.markov_chain_configs = self.markov_chain_configs[n:]
+
+    def revert_lattice_to_config(self, step):
+        """
+        Replaces the current configuration of the lattice with the one from the specified Markov step.
+
+        :param step: Int, the Markov step.
+        :raises ValueError: If the specified step doesn't exist.
+        """
+        if step < len(self.markov_chain_configs):
+            self.lattice.replace_configuration(self.markov_chain_configs[step])
+        else:
+            raise ValueError('The specified Markov step doesn\'t exist')
+
+    def restore_final_lattice_config(self):
+        """
+        Restores the final configuration of the lattice in the Markov Chain.
+        """
+        self.lattice.replace_configuration(self.markov_chain_configs[-1])
+
+    def size(self):
+        """
+        Returns the size of the Markov Chain.
+        """
+        return len(self.markov_chain_configs)

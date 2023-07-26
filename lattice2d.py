@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import numpy as np
 
 from su2matrices import SU2Matrix
@@ -183,6 +185,29 @@ class LatticeGaugeTheory2D:
         """
         y_index, x_index = self.index_with_PBCs(y_index, x_index)
         self.link_variables[y_index, x_index, 1] = U
+
+    def save_configuration_copy(self):
+        """
+        Returns a copy of the self.link_variables array containing all links between sites.
+
+        :returns: An NxMx2 array of SU2Matrix objects. Indexed as [y_index, x_index, 0 or 1] with the final index being
+            0 for the rightward link and 1 for the upward link.
+        """
+        # deep copy not required as the SU2Matrix objects are never mutated, just replaced
+        return self.link_variables.copy()
+
+    def replace_configuration(self, link_variables):
+        """
+        Replaces self.link_variables with the supplied link variables.
+
+        :param link_variables: An NxMx2 array of SU2Matrix objects. Indexed as [y_index, x_index, 0 or 1] with the final
+            index being 0 for the rightward link and 1 for the upward link.
+        :raises ValueError: if link_variables is not of the correct shape
+        """
+        if link_variables.shape == self.link_variables.shape:
+            self.link_variables = link_variables
+        else:
+            raise ValueError('The supplied configuration does not conform to this lattice.')
 
 
 def plaquette(lattice: LatticeGaugeTheory2D, site_x, site_y):

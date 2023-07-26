@@ -66,9 +66,6 @@ class SU2Matrix:
         """
         return is_matrix_special_unitary(self.matrix)
 
-    def re_special_unitrise(self):
-        pass
-
     def get_abcd_values(self):
         """
         Returns the elements of the matrix, in the order a, b, c, d for a matrix [[a, b], [c, d]].
@@ -154,7 +151,9 @@ class SU2Matrix:
 
     def __eq__(self, other):
         if type(other) == SU2Matrix:
-            return self.matrix.all() == other.matrix.all()
+            a, b, c, d = self.get_abcd_values()
+            a1, b1, c1, d1 = other.get_abcd_values()
+            return np.isclose(a, a1) and np.isclose(b, b1) and np.isclose(c, c1) and np.isclose(d, d1)
         return False
 
 

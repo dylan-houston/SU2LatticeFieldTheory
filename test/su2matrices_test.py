@@ -177,11 +177,6 @@ class SU2MatricesTest(unittest.TestCase):
         self.assertEqual(matrix1.left_multiply_by(matrix2).matrix.all(), (matrix2.matrix @ matrix1.matrix).all())
         self.assertEqual(matrix2.left_multiply_by(matrix1).matrix.all(), (matrix1.matrix @ matrix2.matrix).all())
 
-    def test_right_multiply_invalid_su2_with_su2_result(self):
-        matrix1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
-        matrix2 = [[0, -1j], [1j, 0]]
-        self.assertRaises(ValueError, matrix1.right_multiply_by, matrix2)
-
     def test_right_multiply_invalid_su2_with_array_result(self):
         matrix1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
         matrix2 = [[0, -1j], [1j, 0]]

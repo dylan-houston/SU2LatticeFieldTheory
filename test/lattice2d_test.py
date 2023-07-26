@@ -127,16 +127,16 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
 
     def test_downwards_link_inverse_of_upwards(self):
         # check this works for two columns of the lattice
-        self.assertEqual(self.lattice.upward_link(0, 0), self.lattice.downward_link(1, 0).inverse())
-        self.assertEqual(self.lattice.upward_link(1, 0), self.lattice.downward_link(2, 0).inverse())
+        self.assertEquals(self.lattice.upward_link(0, 0), self.lattice.downward_link(1, 0).inverse())
+        self.assertEquals(self.lattice.upward_link(1, 0), self.lattice.downward_link(2, 0).inverse())
         self.assertEqual(self.lattice.upward_link(0, 1), self.lattice.downward_link(1, 1).inverse())
-        self.assertEqual(self.lattice.upward_link(1, 1), self.lattice.downward_link(2, 1).inverse())
+        self.assertEquals(self.lattice.upward_link(1, 1), self.lattice.downward_link(2, 1).inverse())
 
         # and with wrap-around for both columns
-        self.assertEqual(self.lattice.upward_link(0, 0),
-                         self.lattice.downward_link(self.lattice.lattice_height() - 1, 0).inverse())
-        self.assertEqual(self.lattice.upward_link(0, 1),
-                         self.lattice.downward_link(self.lattice.lattice_height() - 1, 1).inverse())
+        self.assertEqual(self.lattice.downward_link(0, 0),
+                         self.lattice.upward_link(self.lattice.lattice_height() - 1, 0).inverse())
+        self.assertEqual(self.lattice.downward_link(0, 1),
+                         self.lattice.upward_link(self.lattice.lattice_height() - 1, 1).inverse())
 
     def test_rightwards_links_updated(self):
         mat1 = SU2Matrix(a=0, b=1j, c=1j, d=0)
@@ -161,7 +161,7 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
         self.assertNotEqual(self.lattice.upward_link(0, 0), mat3)
         self.lattice.update_upward_link(0, 0, mat1)
         self.assertEqual(self.lattice.upward_link(0, 0), mat1)
-        self.lattice.update_rightward_link(0, 0, mat2)
+        self.lattice.update_upward_link(0, 0, mat2)
         self.assertEqual(self.lattice.upward_link(0, 0), mat2)
         self.lattice.update_upward_link(0, 0, mat3)
         self.assertEqual(self.lattice.upward_link(0, 0), mat3)
@@ -222,6 +222,57 @@ class LatticeGaugeTheory2DTest(unittest.TestCase):
         # find the average of the new action difference, must be within 1% of the original action
         action_diff = actions - action_before
         self.assertLessEqual(action_diff.mean(), action_before * 0.01)
+
+    def test_save_configuration(self):
+        # check that after updating a link the copy remains the same but the lattice is different
+        config = self.lattice.save_configuration_copy()
+
+        # take the [0, 0] rightward link
+        a1, b1, c1, d1 = self.lattice.rightward_link(0, 0).get_abcd_values()
+        a2, b2, c2, d2 = config[0, 0, 0].get_abcd_values()
+        self.assertEqual(a1, a2)
+        self.assertEqual(b1, b2)
+        self.assertEqual(c1, c2)
+        self.assertEqual(d1, d2)
+
+        # stick a random SU(2) matrix in. Yes they could be equal but very low probability
+        mat = SU2Matrix()
+        self.lattice.update_rightward_link(0, 0, mat)
+        a3, b3, c3, d3 = self.lattice.rightward_link(0, 0).get_abcd_values()
+        a4, b4, c4, d4 = config[0, 0, 0].get_abcd_values()
+        self.assertNotEqual(a3, a4)
+        self.assertNotEqual(b3, b4)
+        self.assertNotEqual(c3, c4)
+        self.assertNotEqual(d3, d4)
+        self.assertEqual(a2, a4)
+        self.assertEqual(b2, b4)
+        self.assertEqual(c2, c4)
+        self.assertEqual(d2, d4)
+
+    def test_replace_configuration(self):
+        # rejects bad shapes
+        bad_arrays = [
+            np.empty(1), np.empty(self.uneven_lattice.lattice_height()), np.empty(self.uneven_lattice.lattice_width()),
+            np.empty((self.uneven_lattice.lattice_width(), self.uneven_lattice.lattice_height())),
+            np.empty((self.uneven_lattice.lattice_height(), self.uneven_lattice.lattice_width())),
+            np.empty((self.uneven_lattice.lattice_width(), self.uneven_lattice.lattice_height(), 1)),
+            np.empty((self.uneven_lattice.lattice_height(), self.uneven_lattice.lattice_width(), 1)),
+            np.empty((self.uneven_lattice.lattice_width(), self.uneven_lattice.lattice_height(), 2)),
+            np.empty((self.uneven_lattice.lattice_height(), self.uneven_lattice.lattice_width(), 3))
+        ]
+        for arr in bad_arrays:
+            self.assertRaises(ValueError, self.uneven_lattice.replace_configuration, arr)
+
+        # accepts a correct shape
+        current_link_variables = self.uneven_lattice.save_configuration_copy()
+        link_variables = np.empty((*self.uneven_lattice.size, 2), dtype=SU2Matrix)
+        for row in link_variables:
+            for site in row:
+                site[0] = SU2Matrix(seed=42)
+                site[1] = SU2Matrix(seed=42)
+        self.uneven_lattice.replace_configuration(link_variables)
+        self.assertEqual(link_variables.all(), self.uneven_lattice.link_variables.all())
+        self.assertFalse(np.array_equal(current_link_variables, self.uneven_lattice.link_variables))
 
 
 if __name__ == '__main__':
