@@ -23,7 +23,7 @@ class LatticeMarkovChain:
         of action expectation values up to each point in the Markov Chain and the average acceptance rate.
 
         :param n_runs: The number of runs of the algorithm, i.e. the number of steps in the Markov Chain.
-        :returns: average_actions_through_chain, average_acceptance_rate
+        :returns: action_expectation_value_at_each_markov_step, acceptance_rate
         """
         print('----- Starting Metropolis -----')
         start_time = time()
