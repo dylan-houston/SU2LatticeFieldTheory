@@ -1,10 +1,49 @@
 from abc import ABC, abstractmethod
+from fractions import Fraction
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from lattice2d import LatticeGaugeTheory2D, plaquette
 from montecarlo import LatticeMarkovChain
+
+
+def _remove_fraction_of_data(data_arrays: np.ndarray, sparsity):
+    """
+    Removes a fixed amount of data from the supplied arrays in a uniform way. Used for plotting purposes when a graph
+    would be overpopulated given the full dataset.
+
+    :param data_arrays: A 2D array containing all the data sequences to remove data from. Each data sequence should be
+        the same size. Typically, these would be the x, y and error values for each data point.
+    :param sparsity: How much data to remove. A sparsity of 0 is no data removed, a sparsity of 1 is all data removed.
+        The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the data, removing 3 in
+        every 4 points.
+    :returns: a list of the sparse arrays
+    """
+    if 0 < sparsity < 1 and len(data_arrays.shape) == 2:
+        arr_length = len(data_arrays[0])
+
+        frac = Fraction(sparsity).limit_denominator(100)
+        sparsity_denominator = frac.denominator
+        sparsity_numerator = frac.numerator
+
+        indices_to_remove = []
+        for i in range(arr_length // sparsity_denominator):
+            length = sparsity_denominator
+            for j in range(sparsity_numerator):
+                lower = length * i
+                indices_to_remove.append(lower + length - j - 1)
+
+        indices_to_remove = np.array(indices_to_remove, dtype=int)
+        indices_to_remove = indices_to_remove[indices_to_remove < arr_length]
+
+        arrays = []
+        for array in data_arrays:
+            arrays.append(np.delete(array, indices_to_remove))
+        return arrays
+
+    raise ValueError('Sparsity must lie in the same (0, 1) and the data_arrays must be a 2D array containing all data '
+                     'to sparsify.')
 
 
 class LatticeOperator(ABC):
@@ -35,20 +74,23 @@ class LatticeOperator(ABC):
 
         return values
 
-    def plot_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=1):
+    def plot_exp_value_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=0):
         values = self.operate_on_all_configs()
-        x = np.arange(0, self.markov_chain.size(), dtype=int)
-
-        # TODO: Implement sparsity, keep only len(values)*sparsity values
+        x = np.arange(0, self.markov_chain.size())
+        std_dev = np.sqrt(self.variance())
+        if 0 < sparsity < 1:
+            x, values, std_dev = _remove_fraction_of_data(np.array([x, values, std_dev]), sparsity)
 
         fig, ax = plt.subplots(figsize=(10, 10))
-        ax.scatter(x, values, s=1)
 
         if error_bars:
-            ax.errorbar(x, values, yerr=np.sqrt(self.variance()))
+            ax.errorbar(x, values, yerr=std_dev, fmt='x', capsize=5)
+        else:
+            ax.scatter(x, values, s=1)
 
         ax.set_title(title)
         ax.set_ylabel(y_title)
+        ax.set_xlabel('Markov Step')
 
         plt.tight_layout()
         if filepath is not None:
