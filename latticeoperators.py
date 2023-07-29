@@ -54,15 +54,30 @@ class LatticeOperator(ABC):
 
     @abstractmethod
     def operate(self):
+        """
+        Computes the value of this operator for the current configuration of the lattice.
+        """
         pass
 
     def operate_on_markov_step(self, step):
+        """
+        Sets the configuration of the lattice to that of the provided Markov step, computes the value of this operator,
+        before returning the configuration to the end configuration.
+
+        :param step: The index of the configuration in the Markov Chain
+        :returns: The value of the operator for this configuration
+        """
         self.markov_chain.revert_lattice_to_config(step)
         val = self.operate()
         self.markov_chain.restore_final_lattice_config()
         return val
 
     def operate_on_all_configs(self):
+        """
+        Finds the value of this operator at each Markov configuration.
+
+        :returns: An array of values of this operator, one value for each step in the Markov Chain.
+        """
         size = self.markov_chain.size()
         values = np.empty(size)
 
@@ -74,10 +89,50 @@ class LatticeOperator(ABC):
 
         return values
 
-    def plot_exp_value_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=0):
+    def expectation_value(self):
+        """
+        Finds the expectation value of this operator at the current Markov step.
+        """
+        values = self.operate_on_all_configs()
+        return values.mean()
+
+    def variance_at_each_markov_step(self):
+        """
+        Finds the variance of this operator at each Markov step.
+
+        :returns: An array containing a value of the variance at each Markov step.
+        """
+        exp_value = self.expectation_value()
+        values = self.operate_on_all_configs()
+        dev_from_mean2 = (values - exp_value) ** 2
+
+        variance_at_markov_step = np.zeros(self.markov_chain.size())
+        variance_at_markov_step[0] = np.nan
+        for i in range(1, len(variance_at_markov_step)):
+            devs_up_to_i = dev_from_mean2[:i]
+            variance_at_markov_step[i] = devs_up_to_i.sum() / i
+
+        return variance_at_markov_step
+
+    def corrected_variance(self):
+        pass
+
+    def plot_exp_value_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=0.0):
+        """
+        Plots the expectation value of this operator as computed at each Markov step, as a function of Markov step.
+
+        :param title: The plot title.
+        :param y_title: The title of the y axis, typically a description of this operator.
+        :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
+        :param error_bars: Whether to include error bars, which will the standard deviation calculated at each Markov
+            step. Default=`False`.
+        :param sparsity: How much data to remove before plottng. A sparsity of 0 is no data removed, a sparsity of 1 is
+            all data removed. The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the
+            data, removing 3 in every 4 points. Default=0.0.
+        """
         values = self.operate_on_all_configs()
         x = np.arange(0, self.markov_chain.size())
-        std_dev = np.sqrt(self.variance())
+        std_dev = np.sqrt(self.variance_at_each_markov_step())
         if 0 < sparsity < 1:
             x, values, std_dev = _remove_fraction_of_data(np.array([x, values, std_dev]), sparsity)
 
@@ -96,26 +151,6 @@ class LatticeOperator(ABC):
         if filepath is not None:
             plt.savefig(filepath, dpi=300)
         plt.show()
-
-    def expectation_value(self):
-        values = self.operate_on_all_configs()
-        return values.mean()
-
-    def variance(self):
-        exp_value = self.expectation_value()
-        values = self.operate_on_all_configs()
-        dev_from_mean2 = (values - exp_value) ** 2
-
-        variance_at_markov_step = np.zeros(self.markov_chain.size())
-        variance_at_markov_step[0] = np.nan
-        for i in range(1, len(variance_at_markov_step)):
-            devs_up_to_i = dev_from_mean2[:i]
-            variance_at_markov_step[i] = devs_up_to_i.sum() / i
-
-        return variance_at_markov_step
-
-    def corrected_variance(self):
-        pass
 
 
 class PlaquetteOperator(LatticeOperator):
