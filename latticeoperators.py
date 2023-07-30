@@ -62,14 +62,15 @@ class LatticeOperator(ABC):
     def operate_on_markov_step(self, step):
         """
         Sets the configuration of the lattice to that of the provided Markov step, computes the value of this operator,
-        before returning the configuration to the end configuration.
+        before returning the configuration to the configuration that was previously in place.
 
         :param step: The index of the configuration in the Markov Chain
         :returns: The value of the operator for this configuration
         """
+        current_step = self.markov_chain.get_current_config_index()
         self.markov_chain.revert_lattice_to_config(step)
         val = self.operate()
-        self.markov_chain.restore_final_lattice_config()
+        self.markov_chain.revert_lattice_to_config(current_step)
         return val
 
     def operate_on_all_configs(self):
@@ -78,6 +79,8 @@ class LatticeOperator(ABC):
 
         :returns: An array of values of this operator, one value for each step in the Markov Chain.
         """
+        current_config = self.markov_chain.get_current_config_index()
+
         size = self.markov_chain.size()
         values = np.empty(size)
 
@@ -85,16 +88,38 @@ class LatticeOperator(ABC):
             self.markov_chain.revert_lattice_to_config(i)
             values[i] = self.operate()
 
-        self.markov_chain.restore_final_lattice_config()
+        self.markov_chain.revert_lattice_to_config(current_config)
 
         return values
 
     def expectation_value(self):
         """
-        Finds the expectation value of this operator at the current Markov step.
+        Finds the expectation value of this operator over the whole Markov chain.
         """
         values = self.operate_on_all_configs()
         return values.mean()
+
+    def expectation_value_at_step(self, markov_step):
+        """
+        Finds the expectation value of this operator over the chain up to and including the current Markov step.
+        """
+        values = self.operate_on_all_configs()
+        values = values[:markov_step]
+        return values.mean()
+
+    def expectation_value_at_each_step(self):
+        """
+        Finds the expectation value of this operator for each Markov step, where at each step the expectation value is
+        calculated using the chain up to and including that point.
+        """
+        op_values = self.operate_on_all_configs()
+        step_exp_values = np.empty(self.markov_chain.size())
+
+        for i in range(len(step_exp_values)):
+            op_values_to_step = op_values[:i+1]
+            step_exp_values[i] = op_values_to_step.mean()
+
+        return step_exp_values
 
     def variance_at_each_markov_step(self):
         """
@@ -103,19 +128,66 @@ class LatticeOperator(ABC):
         :returns: An array containing a value of the variance at each Markov step.
         """
         exp_value = self.expectation_value()
-        values = self.operate_on_all_configs()
+        values = self.expectation_value_at_each_step()
         dev_from_mean2 = (values - exp_value) ** 2
 
         variance_at_markov_step = np.zeros(self.markov_chain.size())
-        variance_at_markov_step[0] = np.nan
+        variance_at_markov_step[0] = dev_from_mean2[0]
         for i in range(1, len(variance_at_markov_step)):
-            devs_up_to_i = dev_from_mean2[:i]
+            devs_up_to_i = dev_from_mean2[:i+1]
             variance_at_markov_step[i] = devs_up_to_i.sum() / i
 
-        return variance_at_markov_step
+        return variance_at_markov_step * self.integrated_autocorrelation()
 
-    def corrected_variance(self):
-        pass
+    def integrated_autocorrelation(self, up_to=-1):
+        """
+        Calculates the integrated autocorrelation function for this operator over the Markov Chain. In theory, the
+        integrated autocorrelation is a sum from -infinity to infinity; in reality, it is approximated using a finite
+        sum from -M to M where M < N is some value chosen such that the integrated autocorrelation doesn't fall into
+        becoming just noise.
+        """
+        if up_to == -1:
+            up_to = self.markov_chain.size()
+
+        expectation_value = self.expectation_value()
+        expectation_value_at_each_step = self.expectation_value_at_each_step()
+
+        normalisation_sum = 0
+        for i in range(1, self.markov_chain.size()):
+            normalisation_sum += (expectation_value_at_each_step[i] - expectation_value) ** 2
+        normalisation_factor = 1 / (normalisation_sum / self.markov_chain.size())
+
+        autocorrelation_sum = 0
+        for t in range(1, up_to):
+            autocorrelation_sum += self.autocorrelation(t, expectation_value, expectation_value_at_each_step)
+
+        autocorrelation_sum *= normalisation_factor
+        integrated_autocorrelation = 1 + 2 * autocorrelation_sum
+
+        return integrated_autocorrelation
+
+    def autocorrelation(self, tau_value, expectation_value, expectation_value_at_each_step):
+        """
+        Calculates the autocorrelation for a given tau value, where tau is the value summed over to obtain integrated
+        autocorrelation.
+
+        The autocorrelation is defined as:
+        $$\\tau_{\\langle O \\rangle} = \\frac{1}{N-\\tau}\\sum^{N-\\tau}_{n=1}\\left(\\langle O \\rangle_n - \\langle O
+            \\rangle \\right) \\left( \\langle O \\rangle_{n+\\tau} - \\langle O \\rangle \\right) $$
+
+        :param tau_value: The tau value, tau being the number of steps away in the markov chain the variance is measured
+            at.
+        :param expectation_value: The expectation value of the complete Markov Chain.
+        :param expectation_value_at_each_step: The expectation value as calculated at each step of the Markov Chain.
+        """
+        value = 0
+        for n in range(1, self.markov_chain.size() - tau_value):
+            value += (expectation_value_at_each_step[n] - expectation_value) * \
+                     (expectation_value_at_each_step[n + tau_value] - expectation_value)
+
+        value *= 1 / (self.markov_chain.size() - tau_value)
+
+        return value
 
     def plot_exp_value_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=0.0):
         """
@@ -126,11 +198,11 @@ class LatticeOperator(ABC):
         :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
         :param error_bars: Whether to include error bars, which will the standard deviation calculated at each Markov
             step. Default=`False`.
-        :param sparsity: How much data to remove before plottng. A sparsity of 0 is no data removed, a sparsity of 1 is
+        :param sparsity: How much data to remove before plotting. A sparsity of 0 is no data removed, a sparsity of 1 is
             all data removed. The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the
             data, removing 3 in every 4 points. Default=0.0.
         """
-        values = self.operate_on_all_configs()
+        values = self.expectation_value_at_each_step()
         x = np.arange(0, self.markov_chain.size())
         std_dev = np.sqrt(self.variance_at_each_markov_step())
         if 0 < sparsity < 1:
@@ -146,6 +218,33 @@ class LatticeOperator(ABC):
         ax.set_title(title)
         ax.set_ylabel(y_title)
         ax.set_xlabel('Markov Step')
+
+        plt.tight_layout()
+        if filepath is not None:
+            plt.savefig(filepath, dpi=300)
+        plt.show()
+
+    def plot_autocorrelation(self, op_title, filepath=None):
+        """
+        Plots the autocorrelation as a function of tau, ranging from 1 to N, where N is the size of the Markov Chain.
+
+        :param op_title: The name of the operator, as will appear in the title of the plot.
+        :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
+        """
+        x = np.arange(1, self.markov_chain.size())
+        autocorrelations = np.zeros_like(x)
+
+        expectation_value = self.expectation_value()
+        expectation_value_at_each_step = self.expectation_value_at_each_step()
+
+        for tau in range(1, self.markov_chain.size()):
+            autocorrelations[tau] = self.autocorrelation(tau, expectation_value, expectation_value_at_each_step)
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.scatter(x, autocorrelations, s=1)
+        ax.set_title(f'{op_title} Autocorrelation as a function of Markov Step')
+        ax.set_xlabel('Markov Step')
+        ax.set_ylabel('Autocorrelation')
 
         plt.tight_layout()
         if filepath is not None:

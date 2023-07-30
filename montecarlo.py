@@ -14,18 +14,21 @@ class LatticeMarkovChain:
         self.step_size = step_size
 
         self.markov_chain_configs = [lattice.save_configuration_copy()]
+        self.current_config = len(self.markov_chain_configs) - 1
 
         np.random.seed(seed)
 
-    def run_metropolis(self, n_runs=300):
+    def run_metropolis(self, n_runs, supress_output=False):
         """
         Runs the metropolis algorithm to update the lattice and produce a Markov Chain. This function returns an array
         of action expectation values up to each point in the Markov Chain and the average acceptance rate.
 
         :param n_runs: The number of runs of the algorithm, i.e. the number of steps in the Markov Chain.
+        :param supress_output: If False then no output is produced.
         :returns: action_expectation_value_at_each_markov_step, acceptance_rate
         """
-        print('----- Starting Metropolis -----')
+        if not supress_output:
+            print('----- Starting Metropolis -----')
         start_time = time()
 
         cumulative_action = 0
@@ -34,7 +37,8 @@ class LatticeMarkovChain:
         acceptance_rates = np.empty(n_runs)
 
         for run in range(n_runs):
-            print(f'Starting run {run + 1}')
+            if not supress_output:
+                print(f'Starting run {run + 1}')
             run_start_time = time()
 
             # create a random order to go through the whole lattice for this step
@@ -57,13 +61,16 @@ class LatticeMarkovChain:
             # save this configuration
             self.markov_chain_configs.append(self.lattice.save_configuration_copy())
 
-            print(f'Run {run + 1} completed in {time() - run_start_time} seconds.\n'
-                  f'    Acceptance Rate = {acceptance_rates[run]}'
-                  f'    Action = {average_action_through_chain[run]}')
+            if not supress_output:
+                print(f'Run {run + 1} completed in {time() - run_start_time} seconds.\n'
+                      f'    Acceptance Rate = {acceptance_rates[run]}'
+                      f'    Action = {average_action_through_chain[run]}')
 
-        print(f'----- Metropolis Completed in {time() - start_time} seconds -----')
-        print(f'Average Acceptance Rate {acceptance_rates.mean()}')
+        if not supress_output:
+            print(f'----- Metropolis Completed in {time() - start_time} seconds -----')
+            print(f'Average Acceptance Rate {acceptance_rates.mean()}')
 
+        self.current_config = n_runs
         return average_action_through_chain, acceptance_rates.mean()
 
     def _generate_random_lattice_step_through_sequence(self):
@@ -181,6 +188,7 @@ class LatticeMarkovChain:
         """
         if step < len(self.markov_chain_configs):
             self.lattice.replace_configuration(self.markov_chain_configs[step])
+            self.current_config = step
         else:
             raise ValueError('The specified Markov step doesn\'t exist')
 
@@ -189,9 +197,16 @@ class LatticeMarkovChain:
         Restores the final configuration of the lattice in the Markov Chain.
         """
         self.lattice.replace_configuration(self.markov_chain_configs[-1])
+        self.current_config = len(self.markov_chain_configs) - 1
 
     def size(self):
         """
         Returns the size of the Markov Chain.
         """
         return len(self.markov_chain_configs)
+
+    def get_current_config_index(self):
+        """
+        Returns the index (i.e. Markov step index) of the current configuration of the lattice.
+        """
+        return self.current_config
