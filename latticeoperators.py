@@ -286,3 +286,29 @@ class LatticeActionOperator(LatticeOperator):
     """
     def operate(self):
         return self.lattice.action()
+
+
+class PlaquetteCorrelationFunctionOperator(LatticeOperator):
+    """
+    A LatticeOperator class that calculates the correlation function between two plaquettes at a distance.
+    """
+    def __init__(self, lattice: LatticeGaugeTheory2D, markov_chain: LatticeMarkovChain, lattice_point_1,
+                 lattice_point_2):
+        """
+        Creates a PlaquetteCorrelationFunctionOperator that calculates the correlation function between the plaquettes
+        at two different points on the lattice.
+
+        :param lattice_point_1: The [x, y] lattice coordinates to begin the first plaquette at.
+        :param lattice_point_2: The [x, y] lattice coordinates to begin the second plaquette at.
+        """
+
+        super().__init__(lattice, markov_chain)
+
+        self.lattice_coords_1 = lattice_point_1
+        self.lattice_coords_2 = lattice_point_2
+
+        self.plaquette1 = PlaquetteOperator(lattice, markov_chain, lattice_point_1[0], lattice_point_1[1])
+        self.plaquette2 = PlaquetteOperator(lattice, markov_chain, lattice_point_2[0], lattice_point_2[1])
+
+    def operate(self):
+        return (self.plaquette1.operate_on_all_configs() * self.plaquette2.operate_on_all_configs()).mean()
