@@ -150,40 +150,40 @@ class LatticeOperator(ABC):
             up_to = self.markov_chain.size()
 
         expectation_value = self.expectation_value()
-        expectation_value_at_each_step = self.expectation_value_at_each_step()
+        value_at_each_step = self.operate_on_all_configs()
 
         normalisation_sum = 0
         for i in range(1, self.markov_chain.size()):
-            normalisation_sum += (expectation_value_at_each_step[i] - expectation_value) ** 2
+            normalisation_sum += (value_at_each_step[i] - expectation_value) ** 2
         normalisation_factor = 1 / (normalisation_sum / self.markov_chain.size())
 
         autocorrelation_sum = 0
         for t in range(1, up_to):
-            autocorrelation_sum += self.autocorrelation(t, expectation_value, expectation_value_at_each_step)
+            autocorrelation_sum += self.autocorrelation(t, expectation_value, value_at_each_step)
 
         autocorrelation_sum *= normalisation_factor
         integrated_autocorrelation = 1 + 2 * autocorrelation_sum
 
         return integrated_autocorrelation
 
-    def autocorrelation(self, tau_value, expectation_value, expectation_value_at_each_step):
-        """
+    def autocorrelation(self, tau_value, expectation_value, value_at_each_step):
+        r"""
         Calculates the autocorrelation for a given tau value, where tau is the value summed over to obtain integrated
         autocorrelation.
 
         The autocorrelation is defined as:
-        $$\\tau_{\\langle O \\rangle} = \\frac{1}{N-\\tau}\\sum^{N-\\tau}_{n=1}\\left(\\langle O \\rangle_n - \\langle O
-            \\rangle \\right) \\left( \\langle O \\rangle_{n+\\tau} - \\langle O \\rangle \\right) $$
+        $\tau_{\langle O \rangle} = \frac{1}{N-\tau}\sum^{N-\tau}_{n=1}\left(O_n - \langle O
+            \rangle \right) \left(O_{n+\tau} - \langle O \rangle \right) $
 
         :param tau_value: The tau value, tau being the number of steps away in the markov chain the variance is measured
             at.
         :param expectation_value: The expectation value of the complete Markov Chain.
-        :param expectation_value_at_each_step: The expectation value as calculated at each step of the Markov Chain.
+        :param value_at_each_step: The value of the operator as calculated at each step of the Markov Chain.
         """
         value = 0
         for n in range(1, self.markov_chain.size() - tau_value):
-            value += (expectation_value_at_each_step[n] - expectation_value) * \
-                     (expectation_value_at_each_step[n + tau_value] - expectation_value)
+            value += (value_at_each_step[n] - expectation_value) * \
+                     (value_at_each_step[n + tau_value] - expectation_value)
 
         value *= 1 / (self.markov_chain.size() - tau_value)
 
@@ -224,26 +224,26 @@ class LatticeOperator(ABC):
             plt.savefig(filepath, dpi=300)
         plt.show()
 
-    def plot_autocorrelation(self, op_title, filepath=None):
+    def plot_autocorrelation_as_func_of_tau(self, op_title, filepath=None):
         """
         Plots the autocorrelation as a function of tau, ranging from 1 to N, where N is the size of the Markov Chain.
 
         :param op_title: The name of the operator, as will appear in the title of the plot.
         :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
         """
-        x = np.arange(1, self.markov_chain.size())
+        x = np.arange(1, self.markov_chain.size()+1)
         autocorrelations = np.zeros_like(x)
 
         expectation_value = self.expectation_value()
-        expectation_value_at_each_step = self.expectation_value_at_each_step()
+        value_at_each_step = self.operate_on_all_configs()
 
         for tau in range(1, self.markov_chain.size()):
-            autocorrelations[tau] = self.autocorrelation(tau, expectation_value, expectation_value_at_each_step)
+            autocorrelations[tau] = self.autocorrelation(tau, expectation_value, value_at_each_step)
 
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.scatter(x, autocorrelations, s=1)
-        ax.set_title(f'{op_title} Autocorrelation as a function of Markov Step')
-        ax.set_xlabel('Markov Step')
+        ax.set_title(fr'Variation in {op_title} Autocorrelation $\rho(\tau)$')
+        ax.set_xlabel(r'$\tau\$')
         ax.set_ylabel('Autocorrelation')
 
         plt.tight_layout()
