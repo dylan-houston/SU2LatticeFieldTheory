@@ -7,7 +7,7 @@ from latticeoperators import AveragePlaquetteOperator, LatticeActionOperator
 
 
 def run_plot_metropolis():
-    n_steps = 5000
+    n_steps = 100
     M, N = 4, 4
     lattice = LatticeGaugeTheory2D(M, N, random_seed=63)
     markov_chain = LatticeMarkovChain(lattice, step_size=0.25, seed=63)

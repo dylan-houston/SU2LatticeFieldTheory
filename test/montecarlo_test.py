@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import numpy as np
@@ -75,3 +76,16 @@ class LatticeMarkovChainTest(unittest.TestCase):
         self.assertEquals(self.markovchain.get_current_config_index(), 1)
         self.markovchain.restore_final_lattice_config()
         self.assertEquals(self.markovchain.get_current_config_index(), 2)
+
+    def test_save_load_mc_configs(self):
+        # do not need many configs to check
+        self.markovchain.run_metropolis(5, supress_output=True)
+        configs = self.markovchain.markov_chain_configs
+
+        self.markovchain.save_configurations_to_file('.tmp_mc_config')
+        self.markovchain.load_configurations_from_file('.tmp_mc_config.npy')
+
+        # remove the temporary test file
+        os.remove('.tmp_mc_config.npy')
+
+        self.assertTrue(np.array_equal(configs, self.markovchain.markov_chain_configs))

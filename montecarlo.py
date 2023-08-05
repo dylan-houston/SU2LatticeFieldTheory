@@ -18,6 +18,20 @@ class LatticeMarkovChain:
 
         np.random.seed(seed)
 
+    def save_configurations_to_file(self, filename):
+        """
+        Loads the configurations of the Markov Chain to a .npy file. Note that this file contains no information about
+        the step size used or the LatticeGaugeTheory2D object, it will only load the link variables for each Markov step.
+        """
+        np.save(filename, self.markov_chain_configs)
+
+    def load_configurations_from_file(self, filename):
+        """
+        Loads the configurations of the Markov Chain from a file. Note that this file contains no information about the
+        step size used or the LatticeGaugeTheory2D object, it will only load the link variables for each Markov step.
+        """
+        self.markov_chain_configs = np.load(filename, allow_pickle=True).tolist()
+
     def run_metropolis(self, n_runs, supress_output=False):
         """
         Runs the metropolis algorithm to update the lattice and produce a Markov Chain. This function returns an array
