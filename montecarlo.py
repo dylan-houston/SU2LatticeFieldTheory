@@ -30,7 +30,8 @@ class LatticeMarkovChain:
         Loads the configurations of the Markov Chain from a file. Note that this file contains no information about the
         step size used or the LatticeGaugeTheory2D object, it will only load the link variables for each Markov step.
         """
-        self.markov_chain_configs = np.load(filename, allow_pickle=True).tolist()
+        self.markov_chain_configs = list(np.load(filename, allow_pickle=True))
+        self.restore_final_lattice_config()
 
     def run_metropolis(self, n_runs, supress_output=False):
         """

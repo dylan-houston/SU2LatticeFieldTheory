@@ -52,6 +52,8 @@ class LatticeOperator(ABC):
         self.lattice = lattice
         self.markov_chain = markov_chain
 
+        self.autocorrelation_sum_to = None
+
     @abstractmethod
     def operate(self):
         """
@@ -128,7 +130,7 @@ class LatticeOperator(ABC):
         :returns: An array containing a value of the variance at each Markov step.
         """
         exp_value = self.expectation_value()
-        values = self.expectation_value_at_each_step()
+        values = self.operate_on_all_configs()
         dev_from_mean2 = (values - exp_value) ** 2
 
         variance_at_markov_step = np.zeros(self.markov_chain.size())
@@ -137,29 +139,47 @@ class LatticeOperator(ABC):
             devs_up_to_i = dev_from_mean2[:i+1]
             variance_at_markov_step[i] = devs_up_to_i.sum() / i
 
-        return variance_at_markov_step * self.integrated_autocorrelation()
+        return variance_at_markov_step * self.integrated_autocorrelation(exp_value)
 
-    def integrated_autocorrelation(self, up_to=-1):
+    def exp_value_variance_at_each_markov_step(self):
+        """
+        Finds the variance of this operator's expectation value at each Markov step.
+
+        :returns: An array containing a value of the variance at each Markov step.
+        """
+        exp_values = self.expectation_value_at_each_step()
+        mean_exp_value = exp_values.mean()
+        dev_from_mean2 = (exp_values - mean_exp_value) ** 2
+
+        variance_at_markov_step = np.zeros(self.markov_chain.size())
+        variance_at_markov_step[0] = dev_from_mean2[0]
+        for i in range(1, len(variance_at_markov_step)):
+            devs_up_to_i = dev_from_mean2[:i+1]
+            variance_at_markov_step[i] = devs_up_to_i.sum() / i
+
+        return variance_at_markov_step * self.integrated_autocorrelation(mean_exp_value)
+
+    def integrated_autocorrelation(self, mean):
         """
         Calculates the integrated autocorrelation function for this operator over the Markov Chain. In theory, the
         integrated autocorrelation is a sum from -infinity to infinity; in reality, it is approximated using a finite
         sum from -M to M where M < N is some value chosen such that the integrated autocorrelation doesn't fall into
         becoming just noise.
-        """
-        if up_to == -1:
-            up_to = self.markov_chain.size()
 
-        expectation_value = self.expectation_value()
+        :param mean: The mean to subtract from values when calculating autocorrelation.
+        """
+        up_to = self.markov_chain.size() if self.autocorrelation_sum_to is None else self.autocorrelation_sum_to
+
         value_at_each_step = self.operate_on_all_configs()
 
         normalisation_sum = 0
         for i in range(1, self.markov_chain.size()):
-            normalisation_sum += (value_at_each_step[i] - expectation_value) ** 2
+            normalisation_sum += (value_at_each_step[i] - mean) ** 2
         normalisation_factor = 1 / (normalisation_sum / self.markov_chain.size())
 
         autocorrelation_sum = 0
         for t in range(1, up_to):
-            autocorrelation_sum += self.autocorrelation(t, expectation_value, value_at_each_step)
+            autocorrelation_sum += self.autocorrelation(t, mean, value_at_each_step)
 
         autocorrelation_sum *= normalisation_factor
         integrated_autocorrelation = 1 + 2 * autocorrelation_sum
@@ -189,67 +209,14 @@ class LatticeOperator(ABC):
 
         return value
 
-    def plot_exp_value_as_function_of_markov_step(self, title, y_title, filepath=None, error_bars=False, sparsity=0.0):
+    def set_sum_to_for_integrated_autocorrelation(self, sum_to):
         """
-        Plots the expectation value of this operator as computed at each Markov step, as a function of Markov step.
-
-        :param title: The plot title.
-        :param y_title: The title of the y axis, typically a description of this operator.
-        :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
-        :param error_bars: Whether to include error bars, which will the standard deviation calculated at each Markov
-            step. Default=`False`.
-        :param sparsity: How much data to remove before plotting. A sparsity of 0 is no data removed, a sparsity of 1 is
-            all data removed. The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the
-            data, removing 3 in every 4 points. Default=0.0.
+        Sets the value of tau to sum to in the integrated autocorrelation.
         """
-        values = self.expectation_value_at_each_step()
-        x = np.arange(0, self.markov_chain.size())
-        std_dev = np.sqrt(self.variance_at_each_markov_step())
-        if 0 < sparsity < 1:
-            x, values, std_dev = _remove_fraction_of_data(np.array([x, values, std_dev]), sparsity)
-
-        fig, ax = plt.subplots(figsize=(10, 10))
-
-        if error_bars:
-            ax.errorbar(x, values, yerr=std_dev, fmt='x', capsize=5)
+        if sum_to <= self.markov_chain.size():
+            self.autocorrelation_sum_to = sum_to
         else:
-            ax.scatter(x, values, s=1)
-
-        ax.set_title(title)
-        ax.set_ylabel(y_title)
-        ax.set_xlabel('Markov Step')
-
-        plt.tight_layout()
-        if filepath is not None:
-            plt.savefig(filepath, dpi=300)
-        plt.show()
-
-    def plot_autocorrelation_as_func_of_tau(self, op_title, filepath=None):
-        """
-        Plots the autocorrelation as a function of tau, ranging from 1 to N, where N is the size of the Markov Chain.
-
-        :param op_title: The name of the operator, as will appear in the title of the plot.
-        :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
-        """
-        x = np.arange(1, self.markov_chain.size()+1)
-        autocorrelations = np.zeros_like(x)
-
-        expectation_value = self.expectation_value()
-        value_at_each_step = self.operate_on_all_configs()
-
-        for tau in range(1, self.markov_chain.size()):
-            autocorrelations[tau] = self.autocorrelation(tau, expectation_value, value_at_each_step)
-
-        fig, ax = plt.subplots(figsize=(10, 10))
-        ax.scatter(x, autocorrelations, s=1)
-        ax.set_title(fr'Variation in {op_title} Autocorrelation $\rho(\tau)$')
-        ax.set_xlabel(r'$\tau\$')
-        ax.set_ylabel('Autocorrelation')
-
-        plt.tight_layout()
-        if filepath is not None:
-            plt.savefig(filepath, dpi=300)
-        plt.show()
+            raise ValueError('Cannot sum to greater than the size of the Markov Chain')
 
 
 class PlaquetteOperator(LatticeOperator):
@@ -312,3 +279,75 @@ class PlaquetteCorrelationFunctionOperator(LatticeOperator):
 
     def operate(self):
         return (self.plaquette1.operate_on_all_configs() * self.plaquette2.operate_on_all_configs()).mean()
+
+
+# Plotting Functions
+def plot_operator_exp_value_as_function_of_markov_step(operator, title, y_title, filepath=None, error_bars=False,
+                                                       sparsity=0.0):
+    """
+    Plots the expectation value of this operator as computed at each Markov step, as a function of Markov step.
+
+    :param operator: The operator to plot the expectation value of.
+    :param title: The plot title.
+    :param y_title: The title of the y axis, typically a description of this operator.
+    :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
+    :param error_bars: Whether to include error bars, which will the standard deviation calculated at each Markov
+        step. Default=`False`.
+    :param sparsity: How much data to remove before plotting. A sparsity of 0 is no data removed, a sparsity of 1 is
+        all data removed. The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the
+        data, removing 3 in every 4 points. Default=0.0.
+    """
+    values = operator.expectation_value_at_each_step()
+    x = np.arange(0, operator.markov_chain.size())
+    std_dev = np.sqrt(operator.exp_value_variance_at_each_markov_step())
+    if 0 < sparsity < 1:
+        x, values, std_dev = _remove_fraction_of_data(np.array([x, values, std_dev]), sparsity)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    if error_bars:
+        ax.errorbar(x, values, yerr=std_dev, fmt='x', capsize=5)
+    else:
+        ax.scatter(x, values, s=1)
+
+    ax.set_title(title)
+    ax.set_ylabel(y_title)
+    ax.set_xlabel('Markov Step')
+
+    plt.tight_layout()
+    if filepath is not None:
+        plt.savefig(filepath, dpi=300)
+    plt.show()
+
+
+def plot_autocorrelation_as_func_of_tau(operator, op_title, filepath=None, max_tau=None):
+    """
+    Plots the autocorrelation as a function of tau, ranging from 1 to either N, where N is the size of the Markov
+    Chain, or the specified value.
+
+    :param operator: The operator to plot the expectation value of.
+    :param op_title: The name of the operator, as will appear in the title of the plot.
+    :param filepath: The path at which to save the figure. Default=`None`, the figure is not saved.
+    :param max_tau: The maximum tau value of the autocorrelation function to display.
+    """
+    max_tau = max_tau if max_tau is not None else operator.markov_chain.size()
+
+    x = np.arange(1, max_tau + 1)
+    autocorrelations = np.zeros_like(x)
+
+    expectation_value = operator.expectation_value()
+    value_at_each_step = operator.operate_on_all_configs()
+
+    for tau in range(1, max_tau):
+        autocorrelations[tau] = operator.autocorrelation(tau, expectation_value, value_at_each_step)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.scatter(x, autocorrelations, s=1)
+    ax.set_title(fr'Variation in {op_title} Autocorrelation $\rho(\tau)$')
+    ax.set_xlabel(r'$\tau$')
+    ax.set_ylabel('Autocorrelation')
+
+    plt.tight_layout()
+    if filepath is not None:
+        plt.savefig(filepath, dpi=300)
+    plt.show()
