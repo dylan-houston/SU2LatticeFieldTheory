@@ -193,6 +193,7 @@ class LatticeMarkovChain:
         :param n: The number of steps to remove.
         """
         self.markov_chain_configs = self.markov_chain_configs[n:]
+        self.current_config = len(self.markov_chain_configs) - 1
 
     def revert_lattice_to_config(self, step):
         """

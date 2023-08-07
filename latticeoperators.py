@@ -8,44 +8,6 @@ from lattice2d import LatticeGaugeTheory2D, plaquette
 from montecarlo import LatticeMarkovChain
 
 
-def _remove_fraction_of_data(data_arrays: np.ndarray, sparsity):
-    """
-    Removes a fixed amount of data from the supplied arrays in a uniform way. Used for plotting purposes when a graph
-    would be overpopulated given the full dataset.
-
-    :param data_arrays: A 2D array containing all the data sequences to remove data from. Each data sequence should be
-        the same size. Typically, these would be the x, y and error values for each data point.
-    :param sparsity: How much data to remove. A sparsity of 0 is no data removed, a sparsity of 1 is all data removed.
-        The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the data, removing 3 in
-        every 4 points.
-    :returns: a list of the sparse arrays
-    """
-    if 0 < sparsity < 1 and len(data_arrays.shape) == 2:
-        arr_length = len(data_arrays[0])
-
-        frac = Fraction(sparsity).limit_denominator(100)
-        sparsity_denominator = frac.denominator
-        sparsity_numerator = frac.numerator
-
-        indices_to_remove = []
-        for i in range(arr_length // sparsity_denominator):
-            length = sparsity_denominator
-            for j in range(sparsity_numerator):
-                lower = length * i
-                indices_to_remove.append(lower + length - j - 1)
-
-        indices_to_remove = np.array(indices_to_remove, dtype=int)
-        indices_to_remove = indices_to_remove[indices_to_remove < arr_length]
-
-        arrays = []
-        for array in data_arrays:
-            arrays.append(np.delete(array, indices_to_remove))
-        return arrays
-
-    raise ValueError('Sparsity must lie in the same (0, 1) and the data_arrays must be a 2D array containing all data '
-                     'to sparsify.')
-
-
 class LatticeOperator(ABC):
 
     def __init__(self, lattice: LatticeGaugeTheory2D, markov_chain: LatticeMarkovChain):
@@ -61,6 +23,25 @@ class LatticeOperator(ABC):
         """
         pass
 
+    def operate_on_configs(self, steps):
+        """
+        Finds the value of this operator at each of the specified Markov configuration.
+
+        :param steps: An array of indices corresponding to the Markov steps to operate on
+        :returns: An array of values of this operator, one value for each of the specified steps in the Markov Chain.
+        """
+        current_config = self.markov_chain.get_current_config_index()
+
+        values = np.empty(len(steps))
+
+        for i in range(len(steps)):
+            self.markov_chain.revert_lattice_to_config(steps[i])
+            values[i] = self.operate()
+
+        self.markov_chain.revert_lattice_to_config(current_config)
+
+        return values
+
     def operate_on_markov_step(self, step):
         """
         Sets the configuration of the lattice to that of the provided Markov step, computes the value of this operator,
@@ -69,11 +50,7 @@ class LatticeOperator(ABC):
         :param step: The index of the configuration in the Markov Chain
         :returns: The value of the operator for this configuration
         """
-        current_step = self.markov_chain.get_current_config_index()
-        self.markov_chain.revert_lattice_to_config(step)
-        val = self.operate()
-        self.markov_chain.revert_lattice_to_config(current_step)
-        return val
+        return self.operate_on_configs(np.array([step]))
 
     def operate_on_all_configs(self):
         """
@@ -81,18 +58,7 @@ class LatticeOperator(ABC):
 
         :returns: An array of values of this operator, one value for each step in the Markov Chain.
         """
-        current_config = self.markov_chain.get_current_config_index()
-
-        size = self.markov_chain.size()
-        values = np.empty(size)
-
-        for i in range(size):
-            self.markov_chain.revert_lattice_to_config(i)
-            values[i] = self.operate()
-
-        self.markov_chain.revert_lattice_to_config(current_config)
-
-        return values
+        return self.operate_on_configs(np.arange(self.markov_chain.size(), dtype=int))
 
     def expectation_value(self):
         """
@@ -101,27 +67,65 @@ class LatticeOperator(ABC):
         values = self.operate_on_all_configs()
         return values.mean()
 
+    def expectation_value_at_steps(self, steps):
+        """
+        Finds the expectation value of this operator at the given steps in the Markov Chain, where at each step the
+        expectation value is calculated using the chain up to and including that point.
+        """
+        op_values = self.operate_on_configs(steps)
+        step_exp_values = np.empty(len(steps))
+
+        for i in range(len(steps)):
+            op_values_to_step = op_values[:steps[i]+1]
+            step_exp_values[i] = op_values_to_step.mean()
+
+        return step_exp_values
+
     def expectation_value_at_step(self, markov_step):
         """
         Finds the expectation value of this operator over the chain up to and including the current Markov step.
         """
-        values = self.operate_on_all_configs()
-        values = values[:markov_step]
-        return values.mean()
+        return self.expectation_value_at_steps(np.array([markov_step]))
 
     def expectation_value_at_each_step(self):
         """
         Finds the expectation value of this operator for each Markov step, where at each step the expectation value is
         calculated using the chain up to and including that point.
         """
-        op_values = self.operate_on_all_configs()
-        step_exp_values = np.empty(self.markov_chain.size())
+        return self.expectation_value_at_steps(np.arange(self.markov_chain.size(), dtype=int))
 
-        for i in range(len(step_exp_values)):
-            op_values_to_step = op_values[:i+1]
-            step_exp_values[i] = op_values_to_step.mean()
+    def variance_at_markov_steps(self, steps, exp_val_variance=False):
+        """
+        Finds the variance of either this operator or its expectation value, as calculated at the specified Markov steps.
+        This variance is not naive and is corrected by the integrated autocorrelation, compensating for the correlated
+        values in the Markov Chain.
 
-        return step_exp_values
+        :param steps: An array of indices corresponding to the Markov steps to operate on.
+        :param exp_val_variance: Whether to calculate the variance of the expectation value or the operator value.
+            Default=False, will calculate the variance of the operator's value at that step (subtracting the expectation
+            value as the mean used). True will calculate the variance of the expectation value at that step (subtracting
+            the mean expectation value as the mean used).
+        :returns: An array containing a value of the variance at each Markov step.
+        """
+        if exp_val_variance:
+            # if the variance of the expectation value is wanted then find the mean of the exp. values calculated at
+            # each point along the chain
+            mean = self.expectation_value_at_each_step().mean()
+            values = self.expectation_value_at_steps(steps)
+        else:
+            # otherwise if the variance of the operators values are being calculated then the mean value (i.e. the
+            # expectation value of the chain) should be used
+            mean = self.expectation_value()
+            values = self.operate_on_configs(steps)
+
+        dev_from_mean2 = (values - mean) ** 2
+
+        variance_at_markov_steps = np.zeros(len(steps))
+        for i in range(len(steps)):
+            devs_up_to_i = dev_from_mean2[:i+1]
+            variance_at_markov_steps[i] = devs_up_to_i.sum() / (steps[i] + 1)
+
+        return variance_at_markov_steps * self.integrated_autocorrelation(mean)
 
     def variance_at_each_markov_step(self):
         """
@@ -129,17 +133,7 @@ class LatticeOperator(ABC):
 
         :returns: An array containing a value of the variance at each Markov step.
         """
-        exp_value = self.expectation_value()
-        values = self.operate_on_all_configs()
-        dev_from_mean2 = (values - exp_value) ** 2
-
-        variance_at_markov_step = np.zeros(self.markov_chain.size())
-        variance_at_markov_step[0] = dev_from_mean2[0]
-        for i in range(1, len(variance_at_markov_step)):
-            devs_up_to_i = dev_from_mean2[:i+1]
-            variance_at_markov_step[i] = devs_up_to_i.sum() / i
-
-        return variance_at_markov_step * self.integrated_autocorrelation(exp_value)
+        return self.variance_at_markov_steps(np.arange(self.markov_chain.size(), dtype=int))
 
     def exp_value_variance_at_each_markov_step(self):
         """
@@ -147,17 +141,7 @@ class LatticeOperator(ABC):
 
         :returns: An array containing a value of the variance at each Markov step.
         """
-        exp_values = self.expectation_value_at_each_step()
-        mean_exp_value = exp_values.mean()
-        dev_from_mean2 = (exp_values - mean_exp_value) ** 2
-
-        variance_at_markov_step = np.zeros(self.markov_chain.size())
-        variance_at_markov_step[0] = dev_from_mean2[0]
-        for i in range(1, len(variance_at_markov_step)):
-            devs_up_to_i = dev_from_mean2[:i+1]
-            variance_at_markov_step[i] = devs_up_to_i.sum() / i
-
-        return variance_at_markov_step * self.integrated_autocorrelation(mean_exp_value)
+        return self.variance_at_markov_steps(np.arange(self.markov_chain.size(), dtype=int), exp_val_variance=True)
 
     def integrated_autocorrelation(self, mean):
         """
@@ -282,8 +266,41 @@ class PlaquetteCorrelationFunctionOperator(LatticeOperator):
 
 
 # Plotting Functions
-def plot_operator_exp_value_as_function_of_markov_step(operator, title, y_title, filepath=None, error_bars=False,
-                                                       sparsity=0.0):
+def sparse_indices_to_plot(sparsity, data_length):
+    """
+    Provides a set of indices to calculate the values for when wanting a sparsely populated graph, used when a graph
+    would be overpopulated given the full dataset.
+
+    :param sparsity: How much data to remove. A sparsity of 0 is no data removed, a sparsity of 1 is all data removed.
+        The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the data, removing 3 in
+        every 4 points.
+    :param data_length: The length of the full dataset.
+    :returns: a list of indices to calculate the values for to produce a sparse dataset
+    """
+    if 0 < sparsity < 1:
+        frac = Fraction(sparsity).limit_denominator(100)
+        sparsity_denominator = frac.denominator
+        sparsity_numerator = frac.numerator
+
+        indices_to_remove = []
+        for i in range(data_length // sparsity_denominator):
+            length = sparsity_denominator
+            for j in range(sparsity_numerator):
+                lower = length * i
+                indices_to_remove.append(lower + length - j - 1)
+
+        indices_to_remove = np.array(indices_to_remove, dtype=int)
+        indices_to_remove = indices_to_remove[indices_to_remove < data_length]
+
+        indices_to_keep = np.delete(np.arange(data_length), indices_to_remove)
+
+        return indices_to_keep
+
+    raise ValueError('Sparsity must lie in the same (0, 1).')
+
+
+def plot_operator_exp_value_as_function_of_markov_step(operator: LatticeOperator, title, y_title, filepath=None,
+                                                       error_bars=False, sparsity=0.0):
     """
     Plots the expectation value of this operator as computed at each Markov step, as a function of Markov step.
 
@@ -297,16 +314,18 @@ def plot_operator_exp_value_as_function_of_markov_step(operator, title, y_title,
         all data removed. The value must lie in the range (0, 1). Example: A sparsity of 0.75 would keep 1/4 of the
         data, removing 3 in every 4 points. Default=0.0.
     """
-    values = operator.expectation_value_at_each_step()
-    x = np.arange(0, operator.markov_chain.size())
-    std_dev = np.sqrt(operator.exp_value_variance_at_each_markov_step())
     if 0 < sparsity < 1:
-        x, values, std_dev = _remove_fraction_of_data(np.array([x, values, std_dev]), sparsity)
+        x = sparse_indices_to_plot(sparsity, operator.markov_chain.size())
+    else:
+        x = np.arange(operator.markov_chain.size(), dtype=int)
+
+    values = operator.expectation_value_at_steps(x)
+    std_dev = np.sqrt(operator.variance_at_markov_steps(x, exp_val_variance=True))
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
     if error_bars:
-        ax.errorbar(x, values, yerr=std_dev, fmt='x', capsize=5)
+        ax.errorbar(x, values, yerr=std_dev, fmt='x', capsize=3)
     else:
         ax.scatter(x, values, s=1)
 
